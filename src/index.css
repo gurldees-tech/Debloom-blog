@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+@theme {
+  --font-serif: "Newsreader", Georgia, serif;
+  --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  
+  --color-botanical-950: #0b1a11;
+  --color-botanical-900: #12281b;
+  --color-botanical-850: #163323;
+  --color-botanical-800: #1b3b2b;
+  --color-botanical-700: #27523d;
+  --color-botanical-600: #376d52;
+  --color-botanical-400: #62977a;
+  --color-botanical-300: #8fa89b;
+  --color-botanical-200: #b9cac0;
+  --color-botanical-100: #dce7e1;
+  --color-botanical-50: #f1f6f3;
+
+  --color-cream-50: #fcfbf7;
+  --color-cream-100: #f7f5ee;
+  --color-cream-200: #efece1;
+  --color-cream-300: #e4decb;
+
+  --color-charcoal-900: #161a17;
+  --color-charcoal-800: #1f2421;
+  --color-charcoal-700: #2d3430;
+  --color-charcoal-500: #57615c;
+  --color-charcoal-400: #7b8681;
+  --color-charcoal-300: #a7b0ab;
+
+  --color-gold-600: #966f28;
+  --color-gold-500: #b88a3b;
+  --color-gold-400: #c49b4b;
+  --color-gold-100: #fbf4e1;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-cream-50);
+  color: var(--color-charcoal-800);
+}
+
+.font-editorial {
+  font-family: var(--font-serif);
+}
+
+/* Custom scrollbars for clean reader layout */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #d4dad6;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #aab4af;
+}

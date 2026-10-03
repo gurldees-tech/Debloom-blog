@@ -1,0 +1,20 @@
+{
+  "articles": [],
+  "opportunities": [],
+  "resources": [],
+  "challenges": [],
+  "bloomOfTheWeek": {
+    "awarded": false
+  },
+  "submissions": [],
+  "reports": [],
+  "writers": [],
+  "settings": {
+    "telegramUrl": "https://t.me/DebloomHQ",
+    "telegramChannelName": "@DebloomHQ",
+    "contactEmail": "hello@debloom.org",
+    "allowPublicSubmissions": true,
+    "announcementNotice": ""
+  },
+  "analytics": []
+}
