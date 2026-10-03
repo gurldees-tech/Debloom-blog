@@ -59,23 +59,23 @@ export const ContactView: React.FC<ContactViewProps> = ({ settings, onToast }) =
           <div className="p-4 bg-white rounded-xl border border-[#E5E2D9] space-y-1.5">
             <div className="text-xs font-semibold text-[#163323]">Email Inquiries</div>
             <a 
-              href={`mailto:${settings.contactEmail}`}
+              href={`mailto:${settings?.contactEmail || 'hello@debloom.org'}`}
               className="text-xs text-[#27523D] hover:underline break-all block font-medium"
             >
-              {settings.contactEmail}
+              {settings?.contactEmail || 'hello@debloom.org'}
             </a>
           </div>
 
           <div className="p-4 bg-white rounded-xl border border-[#E5E2D9] space-y-1.5">
             <div className="text-xs font-semibold text-[#163323]">Telegram Channel</div>
             <a 
-              href={settings.telegramUrl}
+              href={settings?.telegramUrl || 'https://t.me/DebloomHQ'}
               target="_blank"
               rel="noopener noreferrer"
               className="text-xs text-[#27523D] hover:underline flex items-center gap-1 font-medium"
             >
               <Send className="w-3.5 h-3.5 text-[#8FA89B]" />
-              <span>{settings.telegramChannelName}</span>
+              <span>{settings?.telegramChannelName || '@DebloomHQ'}</span>
             </a>
           </div>
 

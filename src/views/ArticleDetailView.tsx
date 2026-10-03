@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { 
   ArrowLeft, 
   Calendar, 
@@ -11,10 +11,13 @@ import {
   Target, 
   Sparkles,
   ChevronRight,
-  BookOpen
+  BookOpen,
+  Eye,
+  Sprout
 } from 'lucide-react';
 import { Article, BloomChallenge } from '../types';
 import { articleService, analyticsService } from '../services/storage';
+import { ArticleContentRenderer } from '../components/ArticleContentRenderer';
 
 interface ArticleDetailViewProps {
   article: Article;
@@ -26,6 +29,7 @@ interface ArticleDetailViewProps {
   onOpenReportModal: (type: 'opportunity' | 'resource' | 'article', id: string, title: string) => void;
   onOpenSubmit: (challengeTitle?: string) => void;
   onToast: (msg: string) => void;
+  onNavigate?: (view: string, param?: string) => void;
 }
 
 export const ArticleDetailView: React.FC<ArticleDetailViewProps> = ({
@@ -38,14 +42,96 @@ export const ArticleDetailView: React.FC<ArticleDetailViewProps> = ({
   onOpenReportModal,
   onOpenSubmit,
   onToast,
+  onNavigate,
 }) => {
-  const [copied, setCopied] = React.useState(false);
+  const [copied, setCopied] = useState(false);
+  const [currentViews, setCurrentViews] = useState(article.views || 0);
 
   useEffect(() => {
     window.scrollTo(0, 0);
-    articleService.incrementViews(article.id);
+    document.title = `${article.seoTitle || article.title} – Debloom 🌱`;
+
+    // Session-guarded view count increment to prevent accidental refresh inflation
+    const sessionKey = `debloom_viewed_${article.slug || article.id}`;
+    if (typeof window !== 'undefined' && !sessionStorage.getItem(sessionKey)) {
+      sessionStorage.setItem(sessionKey, '1');
+      articleService.incrementViews(article.id);
+      setCurrentViews(prev => prev + 1);
+    }
     analyticsService.logEvent('article_view', article.title);
-  }, [article.id]);
+
+    // Schema.org BlogPosting & Breadcrumb Structured Data
+    const scriptId = 'debloom-article-schema';
+    let scriptTag = document.getElementById(scriptId) as HTMLScriptElement | null;
+    if (!scriptTag) {
+      scriptTag = document.createElement('script');
+      scriptTag.id = scriptId;
+      scriptTag.type = 'application/ld+json';
+      document.head.appendChild(scriptTag);
+    }
+
+    const schemaData = {
+      '@context': 'https://schema.org',
+      '@graph': [
+        {
+          '@type': 'BlogPosting',
+          '@id': `https://debloom.org/blog/${article.slug}#article`,
+          'headline': article.title,
+          'description': article.excerpt || article.metaDescription,
+          'author': {
+            '@type': 'Person',
+            'name': article.author || 'Debbie',
+            'url': 'https://debloom.org/about'
+          },
+          'publisher': {
+            '@type': 'Organization',
+            'name': 'Debloom',
+            'url': 'https://debloom.org',
+            'slogan': 'Start where you are. Bloom from there.'
+          },
+          'datePublished': article.publishDate,
+          'dateModified': article.updatedDate || article.publishDate,
+          'mainEntityOfPage': {
+            '@type': 'WebPage',
+            '@id': `https://debloom.org/blog/${article.slug}`
+          },
+          ...(article.featuredImage ? { 'image': [article.featuredImage] } : {}),
+          'articleSection': article.category
+        },
+        {
+          '@type': 'BreadcrumbList',
+          '@id': `https://debloom.org/blog/${article.slug}#breadcrumb`,
+          'itemListElement': [
+            {
+              '@type': 'ListItem',
+              'position': 1,
+              'name': 'Reading Room',
+              'item': 'https://debloom.org/blog'
+            },
+            {
+              '@type': 'ListItem',
+              'position': 2,
+              'name': article.category,
+              'item': 'https://debloom.org/blog'
+            },
+            {
+              '@type': 'ListItem',
+              'position': 3,
+              'name': article.title,
+              'item': `https://debloom.org/blog/${article.slug}`
+            }
+          ]
+        }
+      ]
+    };
+
+    scriptTag.textContent = JSON.stringify(schemaData);
+
+    return () => {
+      const tag = document.getElementById(scriptId);
+      if (tag) tag.remove();
+    };
+  }, [article.id, article.slug, article.title, article.excerpt, article.metaDescription, article.author, article.publishDate, article.updatedDate, article.featuredImage, article.category]);
 
   const relatedArticles = useMemo(() => {
     return allArticles
@@ -63,7 +149,7 @@ export const ArticleDetailView: React.FC<ArticleDetailViewProps> = ({
   const handleCopyLink = () => {
     navigator.clipboard.writeText(articleUrl);
     setCopied(true);
-    onToast('Article link copied to clipboard!');
+    onToast('Article link copied to clipboard! 🔗');
     setTimeout(() => setCopied(false), 2000);
   };
 
@@ -73,157 +159,108 @@ export const ArticleDetailView: React.FC<ArticleDetailViewProps> = ({
   };
 
   const handleShareTwitter = () => {
-    const text = encodeURIComponent(`"${article.title}" — practical guide on @debloom 🌱`);
+    const text = encodeURIComponent(`"${article.title}" — practical guide on Debloom 🌱`);
     window.open(`https://twitter.com/intent/tweet?text=${text}&url=${encodeURIComponent(articleUrl)}`, '_blank');
   };
 
-  // Convert markdown-style headers, images, quotes, and paragraphs into styled editorial blocks cleanly
-  const renderFormattedBody = (body: string) => {
-    const sections = body.split('\n\n');
-    return sections.map((sec, idx) => {
-      const trimmed = sec.trim();
-      if (!trimmed) return null;
-
-      // Markdown image: ![Alt or Caption](url)
-      const imgMatch = trimmed.match(/^!\[(.*?)\]\((.*?)\)$/);
-      if (imgMatch) {
-        const alt = imgMatch[1];
-        const url = imgMatch[2];
-        return (
-          <figure key={idx} className="my-8 space-y-2.5">
-            <div className="rounded-2xl overflow-hidden border border-[#E5E2D9] shadow-xs bg-[#F7F5EE]">
-              <img
-                src={url}
-                alt={alt || article.title}
-                className="w-full max-h-[520px] object-cover hover:scale-[1.01] transition-transform duration-300"
-                loading="lazy"
-                onError={(e) => {
-                  // Fallback handling if image fails
-                  (e.target as HTMLElement).style.display = 'none';
-                }}
-              />
-            </div>
-            {alt && (
-              <figcaption className="text-center text-xs text-[#7B8681] italic font-sans">
-                {alt}
-              </figcaption>
-            )}
-          </figure>
-        );
-      }
-
-      // Blockquotes: > quote
-      if (trimmed.startsWith('> ')) {
-        return (
-          <blockquote 
-            key={idx} 
-            className="my-6 pl-5 border-l-4 border-[#27523D] bg-[#F7F5EE]/80 py-3.5 px-4 rounded-r-xl text-base sm:text-lg italic text-[#163323] font-editorial leading-relaxed"
-          >
-            {trimmed.replace(/^>\s*/, '')}
-          </blockquote>
-        );
-      }
-
-      // Heading 2: ## 
-      if (trimmed.startsWith('## ')) {
-        return (
-          <h2 key={idx} className="font-editorial text-2xl sm:text-3xl font-bold text-[#163323] mt-10 mb-4 tracking-tight">
-            {trimmed.replace('## ', '')}
-          </h2>
-        );
-      }
-
-      // Heading 3: ### 
-      if (trimmed.startsWith('### ')) {
-        return (
-          <h3 key={idx} className="font-editorial text-xl sm:text-2xl font-bold text-[#163323] mt-8 mb-3">
-            {trimmed.replace('### ', '')}
-          </h3>
-        );
-      }
-
-      // Divider: ---
-      if (trimmed === '---') {
-        return <hr key={idx} className="my-8 border-[#E5E2D9]" />;
-      }
-
-      // Lists: 1. or -
-      if (trimmed.startsWith('1. ') || trimmed.startsWith('- ')) {
-        const items = trimmed.split('\n');
-        return (
-          <ul key={idx} className="my-4 space-y-2 text-sm sm:text-base text-[#2D3430] pl-5 list-disc">
-            {items.map((it, i) => (
-              <li key={i} className="leading-relaxed">
-                {it.replace(/^[0-9]+\.\s+/, '').replace(/^-\s+/, '')}
-              </li>
-            ))}
-          </ul>
-        );
-      }
-
-      return (
-        <p key={idx} className="my-4 text-sm sm:text-base text-[#2D3430] leading-relaxed">
-          {trimmed}
-        </p>
-      );
-    });
-  };
-
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 space-y-8">
+    <article className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 space-y-8 animate-in fade-in duration-150">
       
-      {/* Back button */}
-      <button
-        onClick={onBack}
-        className="inline-flex items-center gap-1.5 text-xs font-medium text-[#57615C] hover:text-[#163323] transition-colors"
-      >
-        <ArrowLeft className="w-4 h-4" />
-        <span>Back to articles</span>
-      </button>
+      {/* Breadcrumb Navigation */}
+      <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-xs text-[#57615C]">
+        <button
+          onClick={onBack}
+          className="hover:text-[#163323] transition-colors cursor-pointer"
+        >
+          Reading Room
+        </button>
+        <span aria-hidden="true" className="text-[#8FA89B]">/</span>
+        <span className="text-[#27523D] font-medium">{article.category}</span>
+        <span aria-hidden="true" className="text-[#8FA89B]">/</span>
+        <span className="truncate max-w-[200px] sm:max-w-xs text-[#7B8681]">{article.title}</span>
+      </nav>
 
       {/* Header Container */}
-      <div className="space-y-4 border-b border-[#E5E2D9] pb-8">
+      <header className="space-y-4 border-b border-[#E5E2D9] pb-8">
         
-        {/* Anti-pill unboxed metadata */}
-        <div className="flex items-center gap-2 text-xs text-[#57615C]">
-          <span className="font-semibold text-[#27523D]">{article.category}</span>
-          <span aria-hidden="true">·</span>
-          <span>{article.readingTimeMinutes} min read</span>
-          <span aria-hidden="true">·</span>
-          <span>Published {article.publishDate}</span>
-          {article.updatedDate && (
+        {/* Subtle Metadata & Real View Count */}
+        <div className="flex flex-wrap items-center gap-2 text-xs text-[#57615C]">
+          <span className="inline-flex items-center gap-1 font-semibold text-[#27523D]">
+            <Sprout className="w-3.5 h-3.5 text-[#27523D]" />
+            <span>{article.category}</span>
+          </span>
+          <span aria-hidden="true" className="text-[#8FA89B]">·</span>
+          <span>{article.readingTimeMinutes || 4} min read</span>
+          <span aria-hidden="true" className="text-[#8FA89B]">·</span>
+          <span>Published {article.publishDate || 'Recent'}</span>
+          {article.updatedDate && article.updatedDate !== article.publishDate && (
             <>
-              <span aria-hidden="true">·</span>
+              <span aria-hidden="true" className="text-[#8FA89B]">·</span>
               <span className="text-[#7B8681]">Updated {article.updatedDate}</span>
             </>
           )}
+          <span aria-hidden="true" className="text-[#8FA89B]">·</span>
+          <span className="inline-flex items-center gap-1 font-medium text-[#7B8681]">
+            <Eye className="w-3.5 h-3.5 text-[#8FA89B]" />
+            <span>{currentViews} {currentViews === 1 ? 'view' : 'views'}</span>
+          </span>
         </div>
 
+        {/* Title */}
         <h1 className="font-editorial text-3xl sm:text-5xl font-bold text-[#163323] tracking-tight leading-[1.18]">
           {article.title}
         </h1>
 
-        <p className="text-base sm:text-lg text-[#57615C] leading-relaxed italic font-editorial">
-          "{article.excerpt}"
-        </p>
+        {/* Subtitle (if provided) */}
+        {article.subtitle && (
+          <p className="font-editorial text-xl sm:text-2xl text-[#27523D] font-medium tracking-tight -mt-1">
+            {article.subtitle}
+          </p>
+        )}
+
+        {/* Excerpt */}
+        {article.excerpt && (
+          <p className="text-base sm:text-lg text-[#57615C] leading-relaxed italic font-editorial pt-1">
+            "{article.excerpt}"
+          </p>
+        )}
 
         {/* Author byline & sharing controls */}
         <div className="pt-4 flex flex-wrap items-center justify-between gap-4 text-xs text-[#57615C]">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-[#163323] text-white flex items-center justify-center font-bold text-xs">
-              {article.author.charAt(0)}
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-[#163323] text-white flex items-center justify-center font-bold text-sm font-editorial">
+              {article.author ? article.author.charAt(0) : 'D'}
             </div>
             <div>
-              <div className="font-semibold text-[#163323]">{article.author}</div>
-              <div className="text-[11px] text-[#7B8681]">{article.authorRole || 'Debloom Editorial'}</div>
+              <div className="font-semibold text-[#163323] flex items-center gap-1.5">
+                <span>{article.author}</span>
+                {article.author.toLowerCase() === 'debbie' && (
+                  <span className="text-[10px] text-[#27523D] font-normal">🌱 Creator</span>
+                )}
+              </div>
+              <div className="text-[11px] text-[#7B8681] flex items-center gap-1">
+                <span>{article.authorRole || 'Debloom Editorial'}</span>
+                {onNavigate && (
+                  <>
+                    <span>·</span>
+                    <button
+                      type="button"
+                      onClick={() => onNavigate('about')}
+                      className="text-[#27523D] underline underline-offset-2 hover:text-[#163323] cursor-pointer"
+                    >
+                      Read story
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
             <button
               onClick={handleCopyLink}
-              className="p-2 rounded-lg border border-[#E5E2D9] bg-white hover:bg-[#F1F6F3] text-[#57615C] transition-colors flex items-center gap-1.5"
-              title="Copy link"
+              className="p-2 rounded-lg border border-[#E5E2D9] bg-white hover:bg-[#F1F6F3] text-[#57615C] transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+              title="Copy shareable link"
             >
               {copied ? <Check className="w-3.5 h-3.5 text-[#27523D]" /> : <Copy className="w-3.5 h-3.5" />}
               <span className="hidden sm:inline text-xs">Copy link</span>
@@ -231,7 +268,7 @@ export const ArticleDetailView: React.FC<ArticleDetailViewProps> = ({
 
             <button
               onClick={handleShareTelegram}
-              className="p-2 rounded-lg border border-[#E5E2D9] bg-white hover:bg-[#F1F6F3] text-[#57615C] transition-colors flex items-center gap-1.5"
+              className="p-2 rounded-lg border border-[#E5E2D9] bg-white hover:bg-[#F1F6F3] text-[#57615C] transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
               title="Share on Telegram"
             >
               <Send className="w-3.5 h-3.5 text-[#27523D]" />
@@ -240,7 +277,7 @@ export const ArticleDetailView: React.FC<ArticleDetailViewProps> = ({
 
             <button
               onClick={handleShareTwitter}
-              className="p-2 rounded-lg border border-[#E5E2D9] bg-white hover:bg-[#F1F6F3] text-[#57615C] transition-colors flex items-center gap-1.5"
+              className="p-2 rounded-lg border border-[#E5E2D9] bg-white hover:bg-[#F1F6F3] text-[#57615C] transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
               title="Share on X"
             >
               <Share2 className="w-3.5 h-3.5 text-[#27523D]" />
@@ -249,30 +286,36 @@ export const ArticleDetailView: React.FC<ArticleDetailViewProps> = ({
           </div>
         </div>
 
-      </div>
+      </header>
 
-      {/* Featured Hero Image (if present) */}
+      {/* Featured Hero Banner */}
       {article.featuredImage && (
-        <div className="rounded-2xl overflow-hidden border border-[#E5E2D9] shadow-xs bg-[#F7F5EE] max-h-[480px]">
+        <figure className="rounded-2xl overflow-hidden border border-[#E5E2D9] shadow-xs bg-[#F7F5EE] max-h-[480px]">
           <img
             src={article.featuredImage}
-            alt={article.title}
+            alt={article.imageAltText || article.title}
             className="w-full h-full object-cover max-h-[480px]"
+            loading="eager"
             onError={(e) => {
               (e.target as HTMLElement).style.display = 'none';
             }}
           />
-        </div>
+          {article.imageAltText && (
+            <figcaption className="text-center text-xs text-[#7B8681] italic font-sans py-2 bg-[#FCFBF7] border-t border-[#E5E2D9]">
+              {article.imageAltText}
+            </figcaption>
+          )}
+        </figure>
       )}
 
-      {/* Main Content Body */}
-      <div className="prose prose-stone max-w-none text-[#1F2421]">
-        {renderFormattedBody(article.body)}
-      </div>
+      {/* Main Content Body rendered with rich editorial styling */}
+      <section className="pt-2">
+        <ArticleContentRenderer content={article.body} />
+      </section>
 
-      {/* EMBEDDED BLOOM CHALLENGE (If linked to this educational article) */}
+      {/* Embedded Bloom Challenge (If linked to this educational article) */}
       {linkedChallenge && (
-        <div className="my-10 bg-[#163323] text-[#FCFBF7] rounded-2xl p-6 sm:p-8 space-y-6">
+        <section className="my-10 bg-[#163323] text-[#FCFBF7] rounded-2xl p-6 sm:p-8 space-y-6">
           <div className="flex items-center justify-between border-b border-[#27523D] pb-4">
             <div className="flex items-center gap-2">
               <Target className="w-5 h-5 text-[#8FA89B]" />
@@ -280,117 +323,137 @@ export const ArticleDetailView: React.FC<ArticleDetailViewProps> = ({
                 Bloom Challenge 🌱
               </h2>
             </div>
-            <span className="text-xs uppercase tracking-wider text-[#C49B4B] font-semibold">
-              Practical Task · {linkedChallenge.difficulty}
+            <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-[#27523D] text-[#8FA89B]">
+              Proof of Work
             </span>
           </div>
 
-          <div>
-            <h3 className="text-lg font-bold text-white mb-2">
+          <div className="space-y-3">
+            <h3 className="font-editorial text-xl font-bold text-[#FCFBF7]">
               {linkedChallenge.title}
             </h3>
-            <p className="text-sm text-[#DCE7E1] leading-relaxed">
-              <strong>What you'll do:</strong> {linkedChallenge.whatYoullDo}
+            <p className="text-xs sm:text-sm text-[#DCE7E1] leading-relaxed">
+              {linkedChallenge.whatYoullDo || linkedChallenge.prompt}
             </p>
           </div>
 
-          <div className="bg-[#12281B] p-4 rounded-xl border border-[#27523D] space-y-2 text-xs">
-            <div className="text-[#8FA89B] font-semibold uppercase tracking-wider">
-              What you need:
+          <div className="p-4 rounded-xl bg-[#1b3b2b] border border-[#27523D] space-y-2">
+            <div className="text-xs font-semibold text-[#8FA89B] uppercase tracking-wider">
+              Expected Output
             </div>
-            <p className="text-[#DCE7E1]">{linkedChallenge.whatYouNeed}</p>
+            <p className="text-xs sm:text-sm text-[#FCFBF7]">
+              {linkedChallenge.expectedOutput}
+            </p>
           </div>
 
-          <div className="space-y-2">
-            <h4 className="text-xs font-semibold uppercase tracking-wider text-[#8FA89B]">
-              Action Steps:
-            </h4>
-            <ol className="space-y-2 pl-4 list-decimal text-xs sm:text-sm text-[#DCE7E1]">
-              {linkedChallenge.steps.map((st, i) => (
-                <li key={i} className="leading-relaxed pl-1">{st}</li>
-              ))}
-            </ol>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 text-xs text-[#DCE7E1]">
-            <div className="bg-[#12281B] p-3 rounded-lg border border-[#27523D]">
-              <div className="font-semibold text-white mb-1">Expected Output:</div>
-              <p>{linkedChallenge.expectedOutput}</p>
-            </div>
-            <div className="bg-[#12281B] p-3 rounded-lg border border-[#27523D]">
-              <div className="font-semibold text-white mb-1">What You Learn:</div>
-              <p>{linkedChallenge.whatYouCanLearn}</p>
-            </div>
-          </div>
-
-          {linkedChallenge.optionalExtension && (
-            <div className="text-xs text-[#8FA89B] italic border-l-2 border-[#C49B4B] pl-3 py-1">
-              <strong>Optional Extension:</strong> {linkedChallenge.optionalExtension}
-            </div>
-          )}
-
-          {/* Submission CTAs */}
-          <div className="pt-4 border-t border-[#27523D] flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 pt-2">
             <div className="text-xs text-[#8FA89B]">
-              Ready to turn this reading into real proof?
+              {linkedChallenge.estimatedTimeMinutes ? `Takes ~${linkedChallenge.estimatedTimeMinutes} mins · ` : ''}Free to complete
             </div>
-
-            <div className="flex items-center gap-3 w-full sm:w-auto">
-              <button
-                onClick={() => onOpenSubmit(linkedChallenge.title)}
-                className="w-full sm:w-auto px-5 py-2.5 rounded-lg bg-white text-[#163323] text-xs font-bold hover:bg-[#F1F6F3] transition-colors shadow-xs"
-              >
-                Submit your work →
-              </button>
-            </div>
+            <button
+              onClick={() => onOpenSubmit(linkedChallenge.title)}
+              className="px-5 py-2.5 rounded-xl bg-[#27523D] hover:bg-[#376d52] text-white text-xs font-semibold transition-colors flex items-center justify-center gap-2 shadow-xs cursor-pointer"
+            >
+              <span>Submit Your Work</span>
+              <ArrowLeft className="w-3.5 h-3.5 rotate-180" />
+            </button>
           </div>
-        </div>
+        </section>
       )}
 
-      {/* Tags & Report Button */}
-      <div className="pt-8 border-t border-[#E5E2D9] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-2 text-xs text-[#57615C]">
-          <span className="font-semibold text-[#163323]">Topics:</span>
+      {/* Tags */}
+      {article.tags && article.tags.length > 0 && (
+        <div className="pt-6 border-t border-[#E5E2D9] flex flex-wrap items-center gap-2">
+          <span className="text-xs text-[#7B8681] font-medium mr-1">Topics:</span>
           {article.tags.map((tag, idx) => (
-            <span key={tag} className="text-[#57615C]">
-              {tag}{idx < article.tags.length - 1 ? ' ·' : ''}
+            <span
+              key={idx}
+              className="px-2.5 py-1 rounded-lg bg-[#FAF8F2] border border-[#E5E2D9] text-[11px] text-[#57615C]"
+            >
+              #{tag}
             </span>
           ))}
         </div>
+      )}
 
-        <button
-          onClick={() => onOpenReportModal('article', article.id, article.title)}
-          className="inline-flex items-center gap-1.5 text-xs text-[#7B8681] hover:text-[#163323] transition-colors"
-        >
-          <ShieldAlert className="w-3.5 h-3.5 text-[#C49B4B]" />
-          <span>Report error or suggestion</span>
-        </button>
-      </div>
+      {/* Telegram Channel Community Banner */}
+      <section className="bg-[#FAF2DC] rounded-2xl border border-[#E5E2D9] p-6 sm:p-8 space-y-3">
+        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[#27523D]">
+          <Send className="w-3.5 h-3.5 text-[#27523D]" />
+          <span>Debloom Community</span>
+        </div>
+        <h3 className="font-editorial text-xl font-bold text-[#163323]">
+          Get quick updates, useful resources and new Debloom posts on Telegram.
+        </h3>
+        <p className="text-xs text-[#57615C]">
+          No spam, no noise. Only verified opportunities, skill guides, and student reflections.
+        </p>
+        <div className="pt-2">
+          <a
+            href="https://t.me/DebloomHQ"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-[#163323] text-white text-xs font-semibold rounded-lg hover:bg-[#27523D] transition-colors"
+          >
+            <Send className="w-3.5 h-3.5" />
+            <span>Join @DebloomHQ</span>
+          </a>
+        </div>
+      </section>
 
-      {/* Related Reading */}
+      {/* Related Guides */}
       {relatedArticles.length > 0 && (
-        <div className="pt-10 border-t border-[#E5E2D9] space-y-4">
-          <h3 className="font-editorial text-2xl font-bold text-[#163323]">
+        <section className="pt-8 border-t border-[#E5E2D9] space-y-4">
+          <h3 className="font-editorial text-xl font-bold text-[#163323]">
             More from Debloom
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {relatedArticles.map(rel => (
+            {relatedArticles.map((rel) => (
               <div
                 key={rel.id}
                 onClick={() => onSelectArticle(rel)}
-                className="bg-white p-5 rounded-xl border border-[#E5E2D9] hover:border-[#8FA89B] cursor-pointer transition-all group"
+                className="p-5 rounded-xl border border-[#E5E2D9] bg-white hover:bg-[#FCFBF7] transition-colors cursor-pointer space-y-2 group shadow-xs"
               >
-                <div className="text-xs text-[#27523D] font-medium mb-1">{rel.category}</div>
-                <h4 className="font-editorial text-base font-bold text-[#163323] group-hover:text-[#27523D]">
+                <div className="text-[11px] font-semibold text-[#27523D] uppercase tracking-wider">
+                  {rel.category}
+                </div>
+                <h4 className="font-editorial text-base font-bold text-[#163323] group-hover:text-[#27523D] transition-colors">
                   {rel.title}
                 </h4>
-                <p className="text-xs text-[#57615C] mt-1 line-clamp-2">{rel.excerpt}</p>
+                <p className="text-xs text-[#57615C] line-clamp-2">
+                  {rel.excerpt}
+                </p>
+                <div className="text-[11px] text-[#7B8681] pt-1 flex items-center justify-between">
+                  <span>{rel.readingTimeMinutes || 4} min read</span>
+                  <span className="text-[#27523D] font-medium flex items-center gap-0.5">
+                    Read guide <ChevronRight className="w-3 h-3 inline" />
+                  </span>
+                </div>
               </div>
             ))}
           </div>
-        </div>
+        </section>
       )}
 
-    </div>
+      {/* Discrepancy reporting link */}
+      <div className="pt-6 border-t border-[#E5E2D9] flex justify-between items-center text-xs text-[#7B8681]">
+        <button
+          onClick={onBack}
+          className="hover:text-[#163323] transition-colors cursor-pointer flex items-center gap-1"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" />
+          <span>Back to Reading Room</span>
+        </button>
+
+        <button
+          onClick={() => onOpenReportModal('article', article.id, article.title)}
+          className="hover:text-red-700 transition-colors flex items-center gap-1 cursor-pointer"
+        >
+          <ShieldAlert className="w-3.5 h-3.5" />
+          <span>Report inaccurate information</span>
+        </button>
+      </div>
+
+    </article>
   );
 };

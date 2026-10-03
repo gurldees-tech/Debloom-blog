@@ -19,17 +19,43 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&display=swap" rel="stylesheet">
 
-    <!-- Schema.org Educational & WebApplication JSON-LD -->
+    <!-- Schema.org WebSite & Organization JSON-LD -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
-      "@type": "EducationalOrganization",
-      "name": "Debloom",
-      "alternateName": "Debloom 🌱",
-      "slogan": "Start where you are. Bloom from there.",
-      "description": "A student-focused platform to discover opportunities, practical skills, verified resources, and challenges beyond the classroom.",
-      "url": "https://debloom.org",
-      "knowsAbout": ["Student Opportunities", "Practical Online Skills", "Scholarships", "University Preparation", "Bloom Challenges"]
+      "@graph": [
+        {
+          "@type": "WebSite",
+          "@id": "https://debloom.org/#website",
+          "name": "Debloom",
+          "alternateName": "Debloom 🌱",
+          "url": "https://debloom.org",
+          "description": "Start where you are. Bloom from there. A student-focused platform created by Debbie to help young people discover useful knowledge, practical skills, opportunities, resources and ideas for growth beyond the classroom.",
+          "inLanguage": "en",
+          "publisher": {
+            "@type": "Organization",
+            "@id": "https://debloom.org/#organization",
+            "name": "Debloom",
+            "url": "https://debloom.org",
+            "slogan": "Start where you are. Bloom from there.",
+            "founder": {
+              "@type": "Person",
+              "name": "Debbie",
+              "jobTitle": "Creator"
+            }
+          }
+        },
+        {
+          "@type": "EducationalOrganization",
+          "@id": "https://debloom.org/#organization",
+          "name": "Debloom",
+          "alternateName": "Debloom 🌱",
+          "slogan": "Start where you are. Bloom from there.",
+          "description": "A student-focused platform created by Debbie to help young people discover useful knowledge, practical skills, opportunities, resources and ideas for growth beyond the classroom.",
+          "url": "https://debloom.org",
+          "knowsAbout": ["Student Opportunities", "Practical Online Skills", "Scholarships", "University Preparation", "Bloom Challenges"]
+        }
+      ]
     }
     </script>
   </head>

@@ -154,6 +154,12 @@ export default function App() {
       }
       refreshData();
     });
+
+    const handleSync = () => {
+      refreshData();
+    };
+    window.addEventListener('debloom-data-synced', handleSync);
+    return () => window.removeEventListener('debloom-data-synced', handleSync);
   }, [refreshData]);
 
   // Load article by slug directly from server if not found in initial memory
@@ -222,7 +228,8 @@ export default function App() {
       title = 'Submit to Debloom: Opportunities, Tools & Challenge Entries 🌱';
       canonical = 'https://debloom.org/submit';
     } else if (currentView === 'about') {
-      title = 'About Debloom & Founder Debbie – Start Where You Are 🌱';
+      title = 'About Debloom – Student Platform by Debbie 🌱';
+      desc = 'Debloom is a student-focused platform created by Debbie to help young people discover useful knowledge, practical skills, and opportunities beyond the classroom.';
       canonical = 'https://debloom.org/about';
     } else if (currentView === 'admin') {
       title = 'Debloom CMS Admin Center';
@@ -462,6 +469,7 @@ export default function App() {
               onOpenReportModal={handleOpenReportModal}
               onOpenSubmit={handleOpenSubmit}
               onToast={(msg) => setToastMessage(msg)}
+              onNavigate={handleNavigate}
             />
           ) : isArticleLoading ? (
             <div className="max-w-3xl mx-auto px-4 py-24 text-center space-y-4">

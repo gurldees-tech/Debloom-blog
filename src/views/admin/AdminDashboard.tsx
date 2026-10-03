@@ -66,6 +66,8 @@ import {
   settingsService, 
   analyticsService 
 } from '../../services/storage';
+import { RichTextEditor } from '../../components/RichTextEditor';
+import { ArticleContentRenderer } from '../../components/ArticleContentRenderer';
 
 interface AdminDashboardProps {
   currentUser: AuthUser;
@@ -1008,6 +1010,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <th className="p-3.5">Title & Slug</th>
                           <th className="p-3.5">Category</th>
                           <th className="p-3.5">Author</th>
+                          <th className="p-3.5">Views</th>
                           <th className="p-3.5">Status</th>
                           <th className="p-3.5">Dates</th>
                           <th className="p-3.5 text-right">Actions</th>
@@ -1022,6 +1025,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             </td>
                             <td className="p-3.5 text-[#57615C] whitespace-nowrap">{article.category}</td>
                             <td className="p-3.5 text-[#57615C] whitespace-nowrap">{article.author}</td>
+                            <td className="p-3.5 text-[#163323] font-medium whitespace-nowrap">
+                              <span className="inline-flex items-center gap-1">
+                                <Eye className="w-3.5 h-3.5 text-[#8FA89B]" />
+                                <span>{article.views || 0} views</span>
+                              </span>
+                            </td>
                             <td className="p-3.5 whitespace-nowrap">
                               <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ${
                                 article.status === 'Published' 
@@ -1867,21 +1876,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         slug: editingArticle.slug ? editingArticle.slug : autoSlug
                       });
                     }}
-                    placeholder="E.g., How to Learn an Online Skill Before University"
+                    placeholder="E.g., What If Your Biggest Limitation Is a Thought?"
                     className="w-full text-xs p-2.5 rounded-xl border border-[#E5E2D9] bg-white text-[#1F2421] focus:outline-none focus:ring-1 focus:ring-[#163323]"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-[#1F2421] mb-1.5">Slug (URL path)</label>
+                  <label className="block text-xs font-semibold text-[#1F2421] mb-1.5">Slug (URL path) *</label>
                   <input
                     type="text"
                     value={editingArticle.slug}
                     onChange={(e) => setEditingArticle({ ...editingArticle, slug: e.target.value })}
-                    placeholder="how-to-learn-an-online-skill"
+                    placeholder="what-if-your-biggest-limitation-is-a-thought"
                     className="w-full text-xs p-2.5 rounded-xl border border-[#E5E2D9] bg-white text-[#1F2421] font-mono focus:outline-none focus:ring-1 focus:ring-[#163323]"
                   />
                 </div>
+              </div>
+
+              {/* Subtitle */}
+              <div>
+                <label className="block text-xs font-semibold text-[#1F2421] mb-1.5">
+                  Subtitle (Optional, e.g. "You Don't Know What You Don't Know.")
+                </label>
+                <input
+                  type="text"
+                  value={editingArticle.subtitle || ''}
+                  onChange={(e) => setEditingArticle({ ...editingArticle, subtitle: e.target.value })}
+                  placeholder="You Don't Know What You Don't Know."
+                  className="w-full text-xs p-2.5 rounded-xl border border-[#E5E2D9] bg-white text-[#1F2421] focus:outline-none focus:ring-1 focus:ring-[#163323]"
+                />
               </div>
 
               {/* Author, Category, Status, Reading Time */}
@@ -1951,7 +1974,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       const tagsArray = e.target.value.split(',').map(t => t.trim()).filter(Boolean);
                       setEditingArticle({ ...editingArticle, tags: tagsArray });
                     }}
-                    placeholder="Practical Skills, University Prep, Self-Taught"
+                    placeholder="Mindset, Growth, Practical Skills"
                     className="w-full text-xs p-2.5 rounded-xl border border-[#E5E2D9] bg-white text-[#1F2421] focus:outline-none focus:ring-1 focus:ring-[#163323]"
                   />
                 </div>
@@ -1969,7 +1992,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <div className="relative h-28 rounded-xl overflow-hidden border border-[#E5E2D9] bg-[#F7F5EE] group">
                         <img 
                           src={editingArticle.featuredImage} 
-                          alt="Featured Banner" 
+                          alt={editingArticle.imageAltText || editingArticle.title} 
                           className="w-full h-full object-cover" 
                         />
                         <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 p-2">
@@ -2003,9 +2026,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </button>
                         </div>
                       </div>
-                      <p className="text-[10px] text-[#7B8681] truncate">
-                        {editingArticle.featuredImage.startsWith('data:') ? 'Custom uploaded image from device' : editingArticle.featuredImage}
-                      </p>
+                      <input
+                        type="text"
+                        value={editingArticle.imageAltText || ''}
+                        onChange={(e) => setEditingArticle({ ...editingArticle, imageAltText: e.target.value })}
+                        placeholder="Image alt text (Descriptive text for accessibility & SEO)..."
+                        className="w-full text-[11px] p-2 rounded-lg border border-[#E5E2D9] bg-white"
+                      />
                     </div>
                   ) : (
                     <div className="flex flex-col sm:flex-row gap-2">
@@ -2037,106 +2064,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 />
               </div>
 
-              {/* Body Text & Rich Visual Toolbar */}
+              {/* Rich Visual WYSIWYG Editor */}
               <div>
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
                   <label className="block text-xs font-semibold text-[#1F2421]">
-                    Article Body * (Markdown & Images supported)
+                    Article Content * (Visual Rich Text Editor)
                   </label>
                   <span className="text-[11px] text-[#7B8681]">
-                    Click formatting buttons below or type Markdown
+                    Write naturally. Use the toolbar for bold, headings, blockquotes, lists, links & images.
                   </span>
                 </div>
 
-                {/* Editorial Toolbar */}
-                <div className="flex flex-wrap items-center gap-1.5 p-2 bg-[#F1F6F3] border border-[#E5E2D9] rounded-t-xl text-xs">
-                  <button
-                    type="button"
-                    onClick={() => setImageModal({ isOpen: true, target: 'body' })}
-                    className="px-2.5 py-1.5 bg-[#163323] text-[#FCFBF7] hover:bg-[#27523D] font-semibold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
-                    title="Insert image into article body"
-                  >
-                    <ImageIcon className="w-3.5 h-3.5 text-[#C49B4B]" />
-                    <span>+ Insert Image</span>
-                  </button>
-
-                  <div className="w-[1px] h-5 bg-[#D2CEBE] mx-1" />
-
-                  <button
-                    type="button"
-                    onClick={() => insertFormatting('### ', '', 'Section Title')}
-                    className="px-2 py-1 bg-white hover:bg-stone-100 text-[#1F2421] border border-[#E5E2D9] rounded-lg transition-colors font-bold text-xs cursor-pointer"
-                    title="Add H3 Heading"
-                  >
-                    H3
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => insertFormatting('## ', '', 'Major Heading')}
-                    className="px-2 py-1 bg-white hover:bg-stone-100 text-[#1F2421] border border-[#E5E2D9] rounded-lg transition-colors font-extrabold text-xs cursor-pointer"
-                    title="Add H2 Heading"
-                  >
-                    H2
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => insertFormatting('**', '**', 'bold text')}
-                    className="px-2.5 py-1 bg-white hover:bg-stone-100 text-[#1F2421] border border-[#E5E2D9] rounded-lg transition-colors font-bold text-xs cursor-pointer"
-                    title="Bold text"
-                  >
-                    B
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => insertFormatting('> ', '', 'Important takeaway or quote...')}
-                    className="px-2 py-1 bg-white hover:bg-stone-100 text-[#1F2421] border border-[#E5E2D9] rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
-                    title="Insert Blockquote"
-                  >
-                    <Quote className="w-3 h-3 text-[#27523D]" />
-                    <span>Quote</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => insertFormatting('- ', '', 'Bullet point')}
-                    className="px-2 py-1 bg-white hover:bg-stone-100 text-[#1F2421] border border-[#E5E2D9] rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
-                    title="Bullet List"
-                  >
-                    <List className="w-3 h-3 text-[#27523D]" />
-                    <span>List</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => insertFormatting('1. ', '', 'First step\n2. Second step')}
-                    className="px-2 py-1 bg-white hover:bg-stone-100 text-[#1F2421] border border-[#E5E2D9] rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
-                    title="Numbered Steps"
-                  >
-                    <ListOrdered className="w-3 h-3 text-[#27523D]" />
-                    <span>Steps</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => insertFormatting('---', '', '')}
-                    className="px-2 py-1 bg-white hover:bg-stone-100 text-[#1F2421] border border-[#E5E2D9] rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
-                    title="Section Divider"
-                  >
-                    <Minus className="w-3 h-3 text-[#7B8681]" />
-                    <span>Divider</span>
-                  </button>
-                </div>
-
-                <textarea
-                  required
-                  rows={14}
+                <RichTextEditor
                   value={editingArticle.body}
-                  onChange={(e) => setEditingArticle({ ...editingArticle, body: e.target.value })}
-                  placeholder="### Section Heading&#10;&#10;Write actionable guidance for students...&#10;&#10;![Image caption](https://images.unsplash.com/...)&#10;&#10;> An honest quote or key principle to remember.&#10;&#10;---&#10;&#10;### Key Takeaways&#10;1. Start with what you have&#10;2. Build daily consistency"
-                  className="w-full text-xs p-3.5 rounded-b-xl border border-t-0 border-[#E5E2D9] bg-white font-sans text-[#1F2421] leading-relaxed focus:outline-none focus:ring-1 focus:ring-[#163323]"
+                  onChange={(content) => setEditingArticle({ ...editingArticle, body: content })}
+                  onOpenImageModal={() => setImageModal({ isOpen: true, target: 'body' })}
+                  onPreview={() => setPreviewArticle(editingArticle)}
+                  placeholder="Write your article naturally here... Select text and click B for bold, H2 for heading, or Quote for blockquote."
                 />
               </div>
 
@@ -2502,74 +2446,57 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             {/* Article Content as Public Readers See It */}
             <div className="p-6 sm:p-10 space-y-6">
               <div className="space-y-4 max-w-3xl">
-                <div className="flex items-center gap-2 text-xs text-[#57615C]">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-[#57615C]">
                   <span className="font-semibold text-[#27523D]">{previewArticle.category}</span>
                   <span>·</span>
-                  <span>{previewArticle.readingTimeMinutes || 5} min read</span>
+                  <span>{previewArticle.readingTimeMinutes || 4} min read</span>
                   <span>·</span>
-                  <span>{previewArticle.publishDate || new Date().toISOString().split('T')[0]}</span>
+                  <span>Published {previewArticle.publishDate || new Date().toISOString().split('T')[0]}</span>
+                  <span>·</span>
+                  <span className="inline-flex items-center gap-1 font-medium text-[#7B8681]">
+                    <Eye className="w-3.5 h-3.5 text-[#8FA89B]" />
+                    <span>{previewArticle.views || 0} views</span>
+                  </span>
                 </div>
 
                 <h1 className="font-editorial text-3xl sm:text-5xl font-bold text-[#163323] leading-tight">
                   {previewArticle.title || 'Untitled Article'}
                 </h1>
 
-                <div className="p-4 bg-[#F1F6F3] border-l-3 border-[#27523D] rounded-r-xl">
-                  <p className="text-sm text-[#2D3430] italic leading-relaxed">
-                    {previewArticle.excerpt || 'No excerpt provided.'}
+                {previewArticle.subtitle && (
+                  <p className="font-editorial text-xl sm:text-2xl text-[#27523D] font-medium tracking-tight -mt-1">
+                    {previewArticle.subtitle}
                   </p>
-                </div>
+                )}
+
+                {previewArticle.excerpt && (
+                  <div className="p-4 bg-[#F1F6F3] border-l-3 border-[#27523D] rounded-r-xl">
+                    <p className="text-sm text-[#2D3430] italic leading-relaxed">
+                      "{previewArticle.excerpt}"
+                    </p>
+                  </div>
+                )}
               </div>
 
               {previewArticle.featuredImage && (
-                <div className="rounded-xl overflow-hidden max-h-80 border border-[#E5E2D9]">
-                  <img src={previewArticle.featuredImage} alt={previewArticle.title} className="w-full h-full object-cover" />
-                </div>
+                <figure className="rounded-xl overflow-hidden max-h-80 border border-[#E5E2D9]">
+                  <img
+                    src={previewArticle.featuredImage}
+                    alt={previewArticle.imageAltText || previewArticle.title}
+                    className="w-full h-full object-cover"
+                  />
+                  {previewArticle.imageAltText && (
+                    <figcaption className="text-center text-xs text-[#7B8681] italic py-1.5 bg-[#FAF8F2] border-t border-[#E5E2D9]">
+                      {previewArticle.imageAltText}
+                    </figcaption>
+                  )}
+                </figure>
               )}
 
-              {/* Rendered Body */}
-              <div className="prose max-w-3xl text-sm text-[#2D3430] leading-relaxed space-y-4 pt-4 border-t border-[#E5E2D9]">
+              {/* Rendered Body with Full Editorial Typography */}
+              <div className="pt-4 border-t border-[#E5E2D9]">
                 {previewArticle.body ? (
-                  previewArticle.body.split('\n\n').map((block, idx) => {
-                    const trimmed = block.trim();
-                    const imgMatch = trimmed.match(/^!\[(.*?)\]\((.*?)\)$/);
-                    if (imgMatch) {
-                      return (
-                        <figure key={idx} className="my-6">
-                          <div className="rounded-xl overflow-hidden border border-[#E5E2D9] bg-[#F7F5EE]">
-                            <img
-                              src={imgMatch[2]}
-                              alt={imgMatch[1]}
-                              className="w-full max-h-96 object-cover"
-                              loading="lazy"
-                            />
-                          </div>
-                          {imgMatch[1] && (
-                            <figcaption className="mt-1.5 text-center text-xs text-[#7B8681] italic">
-                              {imgMatch[1]}
-                            </figcaption>
-                          )}
-                        </figure>
-                      );
-                    }
-                    if (trimmed.startsWith('### ')) {
-                      return <h3 key={idx} className="font-editorial text-xl font-bold text-[#163323] mt-6 mb-2">{trimmed.replace('### ', '')}</h3>;
-                    }
-                    if (trimmed.startsWith('## ')) {
-                      return <h2 key={idx} className="font-editorial text-2xl font-bold text-[#163323] mt-6 mb-2">{trimmed.replace('## ', '')}</h2>;
-                    }
-                    if (trimmed === '---') {
-                      return <hr key={idx} className="border-[#E5E2D9] my-6" />;
-                    }
-                    if (trimmed.startsWith('> ')) {
-                      return (
-                        <blockquote key={idx} className="border-l-3 border-[#27523D] bg-[#F7F5EE]/80 p-3 rounded-r-xl italic text-[#163323] my-4">
-                          {trimmed.replace('> ', '')}
-                        </blockquote>
-                      );
-                    }
-                    return <p key={idx} className="leading-relaxed">{block}</p>;
-                  })
+                  <ArticleContentRenderer content={previewArticle.body} />
                 ) : (
                   <p className="text-xs text-[#7B8681] italic">Body text will appear here.</p>
                 )}

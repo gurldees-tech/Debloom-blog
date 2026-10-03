@@ -144,6 +144,9 @@ export async function syncFromServer(): Promise<void> {
         if (Array.isArray(data.submissions)) safeSet(STORAGE_KEYS.SUBMISSIONS, data.submissions);
         if (Array.isArray(data.reports)) safeSet(STORAGE_KEYS.REPORTS, data.reports);
         if (Array.isArray(data.writers)) safeSet(STORAGE_KEYS.WRITERS, data.writers);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('debloom-data-synced'));
+        }
         return;
       }
     }
@@ -158,6 +161,9 @@ export async function syncFromServer(): Promise<void> {
       if (Array.isArray(pubData.challenges)) safeSet(STORAGE_KEYS.CHALLENGES, pubData.challenges);
       if (pubData.bloomOfTheWeek) safeSet(STORAGE_KEYS.BLOOM_OF_WEEK, pubData.bloomOfTheWeek);
       if (pubData.settings) safeSet(STORAGE_KEYS.SETTINGS, pubData.settings);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('debloom-data-synced'));
+      }
     }
   } catch (e) {
     // Graceful offline fallback

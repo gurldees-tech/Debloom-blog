@@ -56,11 +56,11 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <header className="sticky top-0 z-40 bg-[#FCFBF7]/95 backdrop-blur-md border-b border-[#E5E2D9] transition-all">
       {/* Top micro-banner if announcement is present */}
-      {settings.announcementNotice && (
+      {settings?.announcementNotice && (
         <div className="bg-[#163323] text-[#FCFBF7] text-xs py-1.5 px-4 text-center font-normal tracking-wide flex items-center justify-center gap-2">
           <span>{settings.announcementNotice}</span>
           <a 
-            href={settings.telegramUrl} 
+            href={settings?.telegramUrl || 'https://t.me/DebloomHQ'} 
             target="_blank" 
             rel="noopener noreferrer" 
             className="underline underline-offset-2 hover:text-[#C49B4B] transition-colors ml-1 font-medium"

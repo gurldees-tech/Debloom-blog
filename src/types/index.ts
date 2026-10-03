@@ -3,6 +3,7 @@ export type ArticleStatus = 'Draft' | 'Review' | 'Published' | 'Archived';
 export interface Article {
   id: string;
   title: string;
+  subtitle?: string;
   slug: string;
   excerpt: string;
   body: string;
@@ -11,6 +12,7 @@ export interface Article {
   category: 'Skills' | 'University Prep' | 'Career Exploration' | 'Student Development' | 'General';
   tags: string[];
   featuredImage?: string;
+  imageAltText?: string;
   createdDate?: string;
   publishDate: string;
   updatedDate?: string;
@@ -82,6 +84,8 @@ export interface BloomChallenge {
   status: 'Active' | 'Draft' | 'Archived';
   relatedArticleSlug?: string;
   submissionsCount?: number;
+  prompt?: string;
+  estimatedTimeMinutes?: number;
 }
 
 export type SubmissionType = 

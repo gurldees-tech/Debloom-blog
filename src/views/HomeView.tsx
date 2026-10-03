@@ -407,13 +407,13 @@ export const HomeView: React.FC<HomeViewProps> = ({
           </div>
           <div className="shrink-0 w-full sm:w-auto">
             <a
-              href={settings.telegramUrl}
+              href={settings?.telegramUrl || 'https://t.me/DebloomHQ'}
               target="_blank"
               rel="noopener noreferrer"
               className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-[#163323] text-white text-sm font-semibold hover:bg-[#27523D] transition-all shadow-xs"
             >
               <Send className="w-4 h-4 text-[#8FA89B]" />
-              <span>Join Channel {settings.telegramChannelName}</span>
+              <span>Join Channel {settings?.telegramChannelName || '@DebloomHQ'}</span>
               <ExternalLink className="w-3.5 h-3.5 text-[#8FA89B]" />
             </a>
           </div>

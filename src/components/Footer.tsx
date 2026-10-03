@@ -93,7 +93,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, settings, onOpenAdmi
               </li>
               <li>
                 <a 
-                  href={settings.telegramUrl} 
+                  href={settings?.telegramUrl || 'https://t.me/DebloomHQ'} 
                   target="_blank" 
                   rel="noopener noreferrer" 
                   className="hover:text-white transition-colors flex items-center gap-1"
