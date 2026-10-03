@@ -15,6 +15,40 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+
+// ----------------- ENTERPRISE SECURITY HEADERS -----------------
+// Configured to allow embedding inside the AI Studio development environment iframe
+app.use((_req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
+
+// ----------------- SENSITIVE RESOURCE SHIELD -----------------
+// Protect server-side secrets, database files, and environment files from direct HTTP access
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const pathLower = req.path.toLowerCase();
+  const blockedExact = [
+    '/firebase-applet-config.json',
+    '/firestore.rules',
+    '/server.ts',
+    '/.env',
+    '/.env.local',
+    '/.env.production',
+  ];
+
+  if (
+    blockedExact.includes(pathLower) ||
+    pathLower.startsWith('/.env') ||
+    pathLower.startsWith('/data/')
+  ) {
+    res.status(403).json({ error: 'Access forbidden: Protected system resource' });
+    return;
+  }
+  next();
+});
+
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
@@ -279,8 +313,76 @@ function requireAdmin(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
+// ----------------- LOGIN BRUTE-FORCE RATE LIMITER -----------------
+interface LoginAttempt {
+  count: number;
+  firstAttempt: number;
+  lockedUntil: number;
+}
+const loginRateLimit = new Map<string, LoginAttempt>();
+
+function checkLoginRateLimit(ip: string): { allowed: boolean; waitMinutes?: number } {
+  const now = Date.now();
+  const attempt = loginRateLimit.get(ip);
+  if (!attempt) return { allowed: true };
+
+  if (attempt.lockedUntil > now) {
+    const remainingMs = attempt.lockedUntil - now;
+    return { allowed: false, waitMinutes: Math.ceil(remainingMs / 60000) };
+  }
+
+  // Reset if 15-minute window has passed
+  if (now - attempt.firstAttempt > 15 * 60 * 1000) {
+    loginRateLimit.delete(ip);
+    return { allowed: true };
+  }
+
+  return { allowed: true };
+}
+
+function recordFailedLogin(ip: string): void {
+  const now = Date.now();
+  const attempt = loginRateLimit.get(ip) || { count: 0, firstAttempt: now, lockedUntil: 0 };
+  attempt.count++;
+
+  if (attempt.count >= 5) {
+    attempt.lockedUntil = now + 15 * 60 * 1000; // Lockout for 15 minutes
+    console.warn(`🚨 SECURITY DEFENSE: IP ${ip} locked out after 5 consecutive failed login attempts.`);
+  }
+
+  loginRateLimit.set(ip, attempt);
+}
+
+function resetFailedLogin(ip: string): void {
+  loginRateLimit.delete(ip);
+}
+
+// Timing-safe constant-time password check (prevents timing side-channel attacks)
+function constantTimePasswordCheck(input: string, validList: string[]): boolean {
+  if (!input) return false;
+  const inputHash = crypto.createHash('sha256').update(input).digest();
+  for (const valid of validList) {
+    const validHash = crypto.createHash('sha256').update(valid).digest();
+    if (crypto.timingSafeEqual(inputHash, validHash)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // ----------------- AUTH ENDPOINTS -----------------
 app.post('/api/auth/login', (req: Request, res: Response) => {
+  const clientIp = (req.headers['x-forwarded-for']?.toString().split(',')[0].trim() || req.socket.remoteAddress || 'unknown').replace(/[^a-zA-Z0-9.:_-]/g, '');
+
+  // 1. Check Brute-force lockout
+  const rateLimitStatus = checkLoginRateLimit(clientIp);
+  if (!rateLimitStatus.allowed) {
+    res.status(429).json({
+      error: `Too many failed login attempts. For security reasons, this IP is temporarily restricted. Please wait ${rateLimitStatus.waitMinutes || 15} minute(s) before trying again.`
+    });
+    return;
+  }
+
   const { email, password } = req.body;
 
   if (!password || typeof password !== 'string') {
@@ -288,13 +390,23 @@ app.post('/api/auth/login', (req: Request, res: Response) => {
     return;
   }
 
-  // Constant-time check or strict verification
-  const isMatch = VALID_PASSWORDS.includes(password.trim());
+  // 2. Constant-time timing-attack safe password verification
+  const isMatch = constantTimePasswordCheck(password.trim(), VALID_PASSWORDS);
 
   if (!isMatch) {
-    res.status(401).json({ error: 'Invalid admin credentials' });
+    recordFailedLogin(clientIp);
+    const currentCount = loginRateLimit.get(clientIp)?.count || 1;
+    const remaining = Math.max(0, 5 - currentCount);
+    res.status(401).json({
+      error: remaining > 0
+        ? `Invalid admin credentials. (${remaining} attempt${remaining === 1 ? '' : 's'} remaining before temporary 15-minute security lockout)`
+        : 'Too many failed login attempts. Temporary 15-minute security lockout activated.'
+    });
     return;
   }
+
+  // 3. Clear failed login count upon successful verification
+  resetFailedLogin(clientIp);
 
   const expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000; // 30 days
   const sessionData = {

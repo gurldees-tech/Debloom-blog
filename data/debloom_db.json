@@ -11,11 +11,11 @@
   "writers": [],
   "settings": {
     "telegramChannelName": "@DebloomHQ",
-    "contactEmail": "hello@debloom.org",
-    "allowPublicSubmissions": true,
+    "telegramUrl": "https://t.me/DebloomHQ",
     "announcementNotice": "",
-    "telegramUrl": "https://t.me/DebloomHQ"
+    "allowPublicSubmissions": true,
+    "contactEmail": "hello@debloom.org"
   },
   "analytics": [],
-  "lastUpdated": 1791013018580
+  "lastUpdated": 1791013042042
 }
