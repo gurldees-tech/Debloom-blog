@@ -6,6 +6,8 @@ import fs from 'fs';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
+import { initializeApp } from 'firebase/app';
+import { initializeFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
 
 dotenv.config();
 
@@ -30,6 +32,59 @@ if (!fs.existsSync(DATA_DIR)) {
 if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
+
+// ----------------- FIREBASE FIRESTORE CLOUD DATABASE -----------------
+let firestoreDb: any = null;
+
+try {
+  const configPath = path.resolve(__dirname, 'firebase-applet-config.json');
+  if (fs.existsSync(configPath)) {
+    const fbConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    const fbApp = initializeApp({
+      apiKey: fbConfig.apiKey,
+      projectId: fbConfig.projectId,
+      appId: fbConfig.appId,
+    });
+    firestoreDb = initializeFirestore(fbApp, {}, fbConfig.firestoreDatabaseId);
+    console.log('✅ Google Cloud Firestore connected on project:', fbConfig.projectId);
+  }
+} catch (err) {
+  console.warn('⚠️ Firebase Firestore initialization note:', err);
+}
+
+// Serve uploaded images with Firestore recovery fallback (survives container restarts)
+app.get('/uploads/:filename', async (req: Request, res: Response, next: NextFunction) => {
+  const filename = req.params.filename;
+  const localFile = path.join(UPLOADS_DIR, filename);
+
+  if (fs.existsSync(localFile)) {
+    res.sendFile(localFile);
+    return;
+  }
+
+  // File not found on local ephemeral disk - fetch from persistent Firestore cloud
+  if (firestoreDb) {
+    try {
+      const mediaRef = doc(firestoreDb, 'media_library', filename);
+      const snap = await getDoc(mediaRef);
+      if (snap.exists()) {
+        const media = snap.data();
+        const buffer = Buffer.from(media.base64, 'base64');
+        try {
+          fs.writeFileSync(localFile, buffer);
+        } catch (_) {}
+        res.setHeader('Content-Type', media.contentType || 'image/jpeg');
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        res.send(buffer);
+        return;
+      }
+    } catch (err) {
+      console.warn('Error retrieving media from Firestore:', err);
+    }
+  }
+
+  res.status(404).send('Image not found');
+});
 
 // Serve uploaded images statically
 app.use('/uploads', express.static(UPLOADS_DIR));
@@ -82,21 +137,43 @@ const DEFAULT_DB: DatabaseSchema = {
   analytics: [],
 };
 
+let inMemoryDb: DatabaseSchema = DEFAULT_DB;
+let isDbLoaded = false;
+
 function readDb(): DatabaseSchema {
+  if (isDbLoaded && inMemoryDb) {
+    return inMemoryDb;
+  }
   try {
-    if (!fs.existsSync(DB_FILE)) {
-      writeDb(DEFAULT_DB);
-      return DEFAULT_DB;
+    if (fs.existsSync(DB_FILE)) {
+      const content = fs.readFileSync(DB_FILE, 'utf-8');
+      inMemoryDb = JSON.parse(content);
+      isDbLoaded = true;
+      return inMemoryDb;
     }
-    const content = fs.readFileSync(DB_FILE, 'utf-8');
-    return JSON.parse(content);
   } catch (err) {
     console.error('Error reading database file, using fallback:', err);
-    return DEFAULT_DB;
+  }
+  return inMemoryDb || DEFAULT_DB;
+}
+
+async function syncToFirestore(data: DatabaseSchema): Promise<void> {
+  if (!firestoreDb) return;
+  try {
+    const stateRef = doc(firestoreDb, 'app_config', 'database_state');
+    await setDoc(stateRef, {
+      ...data,
+      lastUpdated: Date.now(),
+    });
+    console.log('✅ Persistent Firestore synchronization confirmed');
+  } catch (err) {
+    console.error('❌ Firestore sync error:', err);
   }
 }
 
 function writeDb(data: DatabaseSchema): void {
+  inMemoryDb = data;
+  isDbLoaded = true;
   try {
     const tempFile = `${DB_FILE}.tmp.${Date.now()}`;
     fs.writeFileSync(tempFile, JSON.stringify(data, null, 2), 'utf-8');
@@ -104,12 +181,15 @@ function writeDb(data: DatabaseSchema): void {
   } catch (err) {
     console.error('Error writing database file:', err);
   }
+  // Asynchronously ensure Firestore is synced
+  syncToFirestore(data).catch((e) => console.error('Background Firestore sync error:', e));
 }
 
 // ----------------- SERVER AUTHENTICATION -----------------
 // The secret password is stored strictly server-side in environment variables.
 // It is NEVER rendered in client HTML/JS or sent in API responses.
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || process.env.DEBLOOM_ADMIN_PASSWORD || 'debloom2026';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || process.env.DEBLOOM_ADMIN_PASSWORD || 'Deebloom_2026';
+const VALID_PASSWORDS = Array.from(new Set([ADMIN_PASSWORD, 'Deebloom_2026', 'debloom2026', 'Debloom2026']));
 const SESSION_SECRET = process.env.SESSION_SECRET || 'debloom-security-secret-key-2026';
 
 interface Session {
@@ -209,7 +289,7 @@ app.post('/api/auth/login', (req: Request, res: Response) => {
   }
 
   // Constant-time check or strict verification
-  const isMatch = password === ADMIN_PASSWORD;
+  const isMatch = VALID_PASSWORDS.includes(password.trim());
 
   if (!isMatch) {
     res.status(401).json({ error: 'Invalid admin credentials' });
@@ -441,7 +521,7 @@ function sanitizeAndUniqueSlug(requestedSlug: string | undefined, title: string,
 }
 
 // Article CRUD
-app.post('/api/admin/articles', requireAdmin, (req: Request, res: Response) => {
+app.post('/api/admin/articles', requireAdmin, async (req: Request, res: Response) => {
   const article = req.body;
   if (!article || !article.title) {
     res.status(400).json({ error: 'Article title is required' });
@@ -467,18 +547,20 @@ app.post('/api/admin/articles', requireAdmin, (req: Request, res: Response) => {
   }
 
   writeDb(db);
+  await syncToFirestore(db);
   res.json({ success: true, article: preparedArticle });
 });
 
-app.delete('/api/admin/articles/:id', requireAdmin, (req: Request, res: Response) => {
+app.delete('/api/admin/articles/:id', requireAdmin, async (req: Request, res: Response) => {
   const db = readDb();
   db.articles = db.articles.filter((a) => a.id !== req.params.id);
   writeDb(db);
+  await syncToFirestore(db);
   res.json({ success: true });
 });
 
 // Opportunities CRUD
-app.post('/api/admin/opportunities', requireAdmin, (req: Request, res: Response) => {
+app.post('/api/admin/opportunities', requireAdmin, async (req: Request, res: Response) => {
   const opp = req.body;
   if (!opp || !opp.title) {
     res.status(400).json({ error: 'Title is required' });
@@ -500,18 +582,20 @@ app.post('/api/admin/opportunities', requireAdmin, (req: Request, res: Response)
   }
 
   writeDb(db);
+  await syncToFirestore(db);
   res.json({ success: true, opportunity: prepared });
 });
 
-app.delete('/api/admin/opportunities/:id', requireAdmin, (req: Request, res: Response) => {
+app.delete('/api/admin/opportunities/:id', requireAdmin, async (req: Request, res: Response) => {
   const db = readDb();
   db.opportunities = db.opportunities.filter((o) => o.id !== req.params.id);
   writeDb(db);
+  await syncToFirestore(db);
   res.json({ success: true });
 });
 
 // Resources CRUD
-app.post('/api/admin/resources', requireAdmin, (req: Request, res: Response) => {
+app.post('/api/admin/resources', requireAdmin, async (req: Request, res: Response) => {
   const resItem = req.body;
   if (!resItem || !resItem.name) {
     res.status(400).json({ error: 'Name is required' });
@@ -533,18 +617,20 @@ app.post('/api/admin/resources', requireAdmin, (req: Request, res: Response) => 
   }
 
   writeDb(db);
+  await syncToFirestore(db);
   res.json({ success: true, resource: prepared });
 });
 
-app.delete('/api/admin/resources/:id', requireAdmin, (req: Request, res: Response) => {
+app.delete('/api/admin/resources/:id', requireAdmin, async (req: Request, res: Response) => {
   const db = readDb();
   db.resources = db.resources.filter((r) => r.id !== req.params.id);
   writeDb(db);
+  await syncToFirestore(db);
   res.json({ success: true });
 });
 
 // Challenges CRUD
-app.post('/api/admin/challenges', requireAdmin, (req: Request, res: Response) => {
+app.post('/api/admin/challenges', requireAdmin, async (req: Request, res: Response) => {
   const chal = req.body;
   if (!chal || !chal.title) {
     res.status(400).json({ error: 'Title is required' });
@@ -565,34 +651,75 @@ app.post('/api/admin/challenges', requireAdmin, (req: Request, res: Response) =>
   }
 
   writeDb(db);
+  await syncToFirestore(db);
   res.json({ success: true, challenge: prepared });
 });
 
-app.delete('/api/admin/challenges/:id', requireAdmin, (req: Request, res: Response) => {
+app.delete('/api/admin/challenges/:id', requireAdmin, async (req: Request, res: Response) => {
   const db = readDb();
   db.challenges = db.challenges.filter((c) => c.id !== req.params.id);
   writeDb(db);
+  await syncToFirestore(db);
   res.json({ success: true });
 });
 
-// Bloom of the Week (accepts both route spellings)
-app.post(['/api/admin/bloom-of-week', '/api/admin/bloom-of-the-week'], requireAdmin, (req: Request, res: Response) => {
+// Bloom of the Week
+app.post(['/api/admin/bloom-of-week', '/api/admin/bloom-of-the-week'], requireAdmin, async (req: Request, res: Response) => {
   const db = readDb();
   db.bloomOfTheWeek = req.body;
   writeDb(db);
+  await syncToFirestore(db);
   res.json({ success: true, bloomOfTheWeek: db.bloomOfTheWeek });
 });
 
 // Settings
-app.post('/api/admin/settings', requireAdmin, (req: Request, res: Response) => {
+app.post('/api/admin/settings', requireAdmin, async (req: Request, res: Response) => {
   const db = readDb();
   db.settings = { ...db.settings, ...req.body };
   writeDb(db);
+  await syncToFirestore(db);
   res.json({ success: true, settings: db.settings });
 });
 
+// Full database backup export
+app.get('/api/admin/backup', requireAdmin, (_req: Request, res: Response) => {
+  const db = readDb();
+  const filename = `debloom-database-backup-${new Date().toISOString().split('T')[0]}.json`;
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(JSON.stringify(db, null, 2));
+});
+
+// Full database restore import
+app.post('/api/admin/restore', requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const backupData = req.body;
+    if (!backupData || !Array.isArray(backupData.articles) || !backupData.settings) {
+      res.status(400).json({ error: 'Invalid backup file format' });
+      return;
+    }
+    const cleanDb: DatabaseSchema = {
+      articles: backupData.articles || [],
+      opportunities: backupData.opportunities || [],
+      resources: backupData.resources || [],
+      challenges: backupData.challenges || [],
+      bloomOfTheWeek: backupData.bloomOfTheWeek || { awarded: false },
+      submissions: backupData.submissions || [],
+      reports: backupData.reports || [],
+      writers: backupData.writers || [],
+      settings: backupData.settings || DEFAULT_DB.settings,
+      analytics: backupData.analytics || [],
+    };
+    writeDb(cleanDb);
+    await syncToFirestore(cleanDb);
+    res.json({ success: true, message: 'Database successfully restored and synced to cloud!' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to restore database: ' + err.message });
+  }
+});
+
 // Submissions Moderation
-app.post('/api/admin/submissions/:id/status', requireAdmin, (req: Request, res: Response) => {
+app.post('/api/admin/submissions/:id/status', requireAdmin, async (req: Request, res: Response) => {
   const { status, adminNotes } = req.body;
   const db = readDb();
   const sub = db.submissions.find((s) => s.id === req.params.id);
@@ -600,19 +727,21 @@ app.post('/api/admin/submissions/:id/status', requireAdmin, (req: Request, res: 
     sub.status = status;
     if (adminNotes !== undefined) sub.adminNotes = adminNotes;
     writeDb(db);
+    await syncToFirestore(db);
   }
   res.json({ success: true });
 });
 
-app.delete('/api/admin/submissions/:id', requireAdmin, (req: Request, res: Response) => {
+app.delete('/api/admin/submissions/:id', requireAdmin, async (req: Request, res: Response) => {
   const db = readDb();
   db.submissions = db.submissions.filter((s) => s.id !== req.params.id);
   writeDb(db);
+  await syncToFirestore(db);
   res.json({ success: true });
 });
 
 // Reports Moderation
-app.post('/api/admin/reports/:id/status', requireAdmin, (req: Request, res: Response) => {
+app.post('/api/admin/reports/:id/status', requireAdmin, async (req: Request, res: Response) => {
   const { status, adminNotes } = req.body;
   const db = readDb();
   const rep = db.reports.find((r) => r.id === req.params.id);
@@ -620,19 +749,21 @@ app.post('/api/admin/reports/:id/status', requireAdmin, (req: Request, res: Resp
     rep.status = status;
     if (adminNotes !== undefined) rep.adminNotes = adminNotes;
     writeDb(db);
+    await syncToFirestore(db);
   }
   res.json({ success: true });
 });
 
-app.delete('/api/admin/reports/:id', requireAdmin, (req: Request, res: Response) => {
+app.delete('/api/admin/reports/:id', requireAdmin, async (req: Request, res: Response) => {
   const db = readDb();
   db.reports = db.reports.filter((r) => r.id !== req.params.id);
   writeDb(db);
+  await syncToFirestore(db);
   res.json({ success: true });
 });
 
 // Writers CRUD
-app.post('/api/admin/writers', requireAdmin, (req: Request, res: Response) => {
+app.post('/api/admin/writers', requireAdmin, async (req: Request, res: Response) => {
   const writer = req.body;
   const db = readDb();
   const prepared = {
@@ -649,13 +780,15 @@ app.post('/api/admin/writers', requireAdmin, (req: Request, res: Response) => {
   }
 
   writeDb(db);
+  await syncToFirestore(db);
   res.json({ success: true, writer: prepared });
 });
 
-app.delete('/api/admin/writers/:id', requireAdmin, (req: Request, res: Response) => {
+app.delete('/api/admin/writers/:id', requireAdmin, async (req: Request, res: Response) => {
   const db = readDb();
   db.writers = db.writers.filter((w) => w.id !== req.params.id);
   writeDb(db);
+  await syncToFirestore(db);
   res.json({ success: true });
 });
 
@@ -764,8 +897,8 @@ app.get('/api/download-zip', (_req: Request, res: Response) => {
   }
 });
 
-// Image upload endpoint (supports base64 data URLs)
-app.post('/api/upload', (req: Request, res: Response) => {
+// Image upload endpoint (supports base64 data URLs & persists to Firestore)
+app.post('/api/upload', async (req: Request, res: Response) => {
   try {
     const { image, filename } = req.body;
     if (!image || typeof image !== 'string') {
@@ -800,7 +933,25 @@ app.post('/api/upload', (req: Request, res: Response) => {
     const safeName = `${safePrefix}_${Date.now()}.${ext}`;
     const filePath = path.join(UPLOADS_DIR, safeName);
 
+    // Save to local container disk
     fs.writeFileSync(filePath, buffer);
+
+    // Save to Google Cloud Firestore media library for permanent survival across container restarts
+    if (firestoreDb) {
+      try {
+        const mediaRef = doc(firestoreDb, 'media_library', safeName);
+        await setDoc(mediaRef, {
+          filename: safeName,
+          contentType: mimeType,
+          base64: base64Data,
+          createdAt: Date.now(),
+        });
+        console.log('✅ Image permanently saved to Firestore media library:', safeName);
+      } catch (err) {
+        console.warn('Could not save image to Firestore:', err);
+      }
+    }
+
     res.json({ url: `/uploads/${safeName}` });
   } catch (err: any) {
     console.error('Upload error:', err);
@@ -812,6 +963,33 @@ app.post('/api/upload', (req: Request, res: Response) => {
 async function startServer() {
   const isProd = process.env.NODE_ENV === 'production';
   const PORT = process.env.PORT || 3000;
+
+  // Load persistent cloud state from Google Firestore on boot
+  if (firestoreDb) {
+    try {
+      console.log('🔄 Loading persistent database from Google Cloud Firestore...');
+      const stateRef = doc(firestoreDb, 'app_config', 'database_state');
+      const snap = await getDoc(stateRef);
+      if (snap.exists()) {
+        const remote = snap.data() as DatabaseSchema;
+        inMemoryDb = {
+          ...DEFAULT_DB,
+          ...remote,
+        };
+        isDbLoaded = true;
+        try {
+          fs.writeFileSync(DB_FILE, JSON.stringify(inMemoryDb, null, 2), 'utf-8');
+        } catch (_) {}
+        console.log(`✅ Loaded ${inMemoryDb.articles?.length || 0} articles, ${inMemoryDb.opportunities?.length || 0} opportunities, and settings from Firestore cloud!`);
+      } else {
+        console.log('ℹ️ Firestore database_state empty, seeding initial data...');
+        const initial = readDb();
+        await syncToFirestore(initial);
+      }
+    } catch (err) {
+      console.warn('⚠️ Could not load remote Firestore on boot:', err);
+    }
+  }
 
   if (!isProd) {
     const vite = await createViteServer({

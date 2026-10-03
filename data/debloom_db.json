@@ -10,11 +10,12 @@
   "reports": [],
   "writers": [],
   "settings": {
-    "telegramUrl": "https://t.me/DebloomHQ",
     "telegramChannelName": "@DebloomHQ",
     "contactEmail": "hello@debloom.org",
     "allowPublicSubmissions": true,
-    "announcementNotice": ""
+    "announcementNotice": "",
+    "telegramUrl": "https://t.me/DebloomHQ"
   },
-  "analytics": []
+  "analytics": [],
+  "lastUpdated": 1791013018580
 }

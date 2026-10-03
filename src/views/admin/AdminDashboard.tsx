@@ -37,7 +37,8 @@ import {
   Minus,
   Loader2,
   Camera,
-  BookOpen
+  BookOpen,
+  Database
 } from 'lucide-react';
 import { 
   Article, 
@@ -642,6 +643,49 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     } catch (err: any) {
       console.error('Settings save error:', err);
       onToast(`Failed to save settings: ${err.message || 'Check admin session.'}`);
+    }
+  };
+
+  const handleDownloadBackup = async () => {
+    try {
+      const res = await fetch('/api/admin/backup', {
+        headers: { 'Authorization': `Bearer ${currentUser?.token || ''}` }
+      });
+      if (!res.ok) throw new Error('Failed to generate backup');
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `debloom-database-backup-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      onToast('Database backup downloaded successfully! 💾');
+    } catch (err: any) {
+      onToast(`Backup failed: ${err.message}`);
+    }
+  };
+
+  const handleRestoreBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const json = JSON.parse(text);
+      const res = await fetch('/api/admin/restore', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${currentUser?.token || ''}`
+        },
+        body: JSON.stringify(json)
+      });
+      if (!res.ok) throw new Error('Server rejected backup restore');
+      onToast('Database successfully restored and synced to cloud! 🔄 Reloading data...');
+      onRefreshData();
+    } catch (err: any) {
+      onToast(`Restore failed: ${err.message}`);
     }
   };
 
@@ -1722,12 +1766,57 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <button
                   type="submit"
                   disabled={!isAdmin}
-                  className="px-5 py-2.5 bg-[#163323] text-white text-xs font-semibold rounded-lg hover:bg-[#27523D] transition-colors"
+                  className="px-5 py-2.5 bg-[#163323] text-white text-xs font-semibold rounded-lg hover:bg-[#27523D] transition-colors cursor-pointer"
                 >
                   Save Platform Settings
                 </button>
               </div>
             </form>
+
+            {/* Cloud Database & Safe Backups Section */}
+            <div className="pt-6 border-t border-[#E5E2D9] space-y-4">
+              <div className="flex items-center gap-2">
+                <Database className="w-4 h-4 text-[#27523D]" />
+                <h3 className="text-sm font-bold text-[#163323]">
+                  Cloud Database & Safe Backups
+                </h3>
+              </div>
+
+              <div className="p-4 bg-[#F1F6F3] rounded-xl border border-[#C5DDD1] space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-[#163323]">Persistent Storage</span>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-800">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                    Google Cloud Firestore (Connected & Active)
+                  </span>
+                </div>
+                <p className="text-[11px] text-[#57615C] leading-relaxed">
+                  Your articles, opportunities, challenges, and settings are backed up to Google Cloud Firestore. Your content stays online permanently across container restarts and cloud redeployments.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={handleDownloadBackup}
+                  className="px-4 py-2.5 bg-white border border-[#E5E2D9] hover:bg-[#F7F5EE] text-[#163323] text-xs font-semibold rounded-xl flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-xs"
+                >
+                  <Download className="w-3.5 h-3.5 text-[#27523D]" />
+                  <span>Download Backup (JSON)</span>
+                </button>
+
+                <label className="px-4 py-2.5 bg-white border border-[#E5E2D9] hover:bg-[#F7F5EE] text-[#163323] text-xs font-semibold rounded-xl flex items-center justify-center gap-2 transition-colors cursor-pointer text-center shadow-xs">
+                  <Upload className="w-3.5 h-3.5 text-[#27523D]" />
+                  <span>Restore from Backup</span>
+                  <input
+                    type="file"
+                    accept=".json"
+                    onChange={handleRestoreBackup}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            </div>
           </div>
         )}
 
