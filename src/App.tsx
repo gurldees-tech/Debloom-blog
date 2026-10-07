@@ -45,6 +45,7 @@ import { ExploreView } from './views/ExploreView';
 import { BlogView } from './views/BlogView';
 import { ArticleDetailView } from './views/ArticleDetailView';
 import { OpportunitiesView } from './views/OpportunitiesView';
+import { OpportunityDetailView } from './views/OpportunityDetailView';
 import { ResourcesView } from './views/ResourcesView';
 import { ChallengesView } from './views/ChallengesView';
 import { SubmitView } from './views/SubmitView';
@@ -67,6 +68,14 @@ function parseInitialPath(): { view: string; slug: string | null } {
       return { view: 'article-detail', slug };
     }
     return { view: 'blog', slug: null };
+  }
+
+  if (pathname.startsWith('/opportunities/')) {
+    const slug = pathname.replace(/^\/opportunities\//, '').split('/')[0].trim();
+    if (slug) {
+      return { view: 'opportunity-detail', slug };
+    }
+    return { view: 'opportunities', slug: null };
   }
 
   const p = pathname.replace(/^\//, '').toLowerCase().trim();
@@ -96,6 +105,15 @@ export default function App() {
   });
   const [isArticleLoading, setIsArticleLoading] = useState<boolean>(() => {
     return initialRoute.view === 'article-detail' && !!initialRoute.slug && !articleService.getBySlug(initialRoute.slug);
+  });
+  const [selectedOpportunity, setSelectedOpportunity] = useState<Opportunity | null>(() => {
+    if (initialRoute.view === 'opportunity-detail' && initialRoute.slug) {
+      return opportunityService.getBySlug(initialRoute.slug) || null;
+    }
+    return null;
+  });
+  const [isOpportunityLoading, setIsOpportunityLoading] = useState<boolean>(() => {
+    return initialRoute.view === 'opportunity-detail' && !!initialRoute.slug && !opportunityService.getBySlug(initialRoute.slug);
   });
   const [submitChallengeTitle, setSubmitChallengeTitle] = useState<string>('');
   
@@ -173,12 +191,24 @@ export default function App() {
     }
   }, [currentView, requestedSlug, selectedArticle]);
 
+  // Load opportunity by slug directly from server if not found in initial memory
+  useEffect(() => {
+    if (currentView === 'opportunity-detail' && requestedSlug && !selectedOpportunity) {
+      setIsOpportunityLoading(true);
+      opportunityService.fetchBySlug(requestedSlug).then((opp) => {
+        setSelectedOpportunity(opp);
+        setIsOpportunityLoading(false);
+      });
+    }
+  }, [currentView, requestedSlug, selectedOpportunity]);
+
   // Browser Back/Forward navigation listener
   useEffect(() => {
     const handlePopState = () => {
       const parsed = parseInitialPath();
       if (parsed.view === 'article-detail' && parsed.slug) {
         setRequestedSlug(parsed.slug);
+        setSelectedOpportunity(null);
         const art = articleService.getBySlug(parsed.slug);
         setSelectedArticle(art || null);
         if (!art) {
@@ -188,8 +218,21 @@ export default function App() {
             setIsArticleLoading(false);
           });
         }
+      } else if (parsed.view === 'opportunity-detail' && parsed.slug) {
+        setRequestedSlug(parsed.slug);
+        setSelectedArticle(null);
+        const opp = opportunityService.getBySlug(parsed.slug);
+        setSelectedOpportunity(opp || null);
+        if (!opp) {
+          setIsOpportunityLoading(true);
+          opportunityService.fetchBySlug(parsed.slug).then((fetched) => {
+            setSelectedOpportunity(fetched);
+            setIsOpportunityLoading(false);
+          });
+        }
       } else {
         setSelectedArticle(null);
+        setSelectedOpportunity(null);
         setRequestedSlug(null);
       }
       setCurrentView(parsed.view);
@@ -201,36 +244,41 @@ export default function App() {
 
   // Synchronize document title and canonical meta for SEO
   useEffect(() => {
-    let title = 'Debloom – Start where you are. Bloom from there.';
-    let desc = 'A student-focused platform to discover opportunities, practical skills, verified resources, and challenges beyond the classroom.';
-    let canonical = 'https://debloom.org';
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://debloom.org';
+    let title = 'Debloom — Skills, Opportunities & Resources for Students';
+    let desc = 'Discover practical skills, scholarships, opportunities, learning resources and useful guides to help you prepare for university, work and life beyond school.';
+    let canonical = `${origin}/`;
 
     if (currentView === 'article-detail' && selectedArticle) {
       title = `${selectedArticle.seoTitle || selectedArticle.title} – Debloom 🌱`;
       desc = selectedArticle.metaDescription || selectedArticle.excerpt || desc;
-      canonical = `https://debloom.org/blog/${selectedArticle.slug}`;
+      canonical = `${origin}/blog/${selectedArticle.slug}`;
+    } else if (currentView === 'opportunity-detail' && selectedOpportunity) {
+      title = `${selectedOpportunity.seoTitle || selectedOpportunity.title} – Debloom 🌱`;
+      desc = selectedOpportunity.metaDescription || selectedOpportunity.description?.slice(0, 155) || desc;
+      canonical = `${origin}/opportunities/${selectedOpportunity.slug || selectedOpportunity.id}`;
     } else if (currentView === 'explore') {
       title = 'Explore Verified Opportunities & Guides – Debloom 🌱';
-      canonical = 'https://debloom.org/explore';
+      canonical = `${origin}/explore`;
     } else if (currentView === 'opportunities') {
       title = 'Verified Student Opportunities & Scholarships – Debloom 🌱';
-      canonical = 'https://debloom.org/opportunities';
+      canonical = `${origin}/opportunities`;
     } else if (currentView === 'resources') {
       title = 'Curated Student Tools & Free Learning Resources – Debloom 🌱';
-      canonical = 'https://debloom.org/resources';
+      canonical = `${origin}/resources`;
     } else if (currentView === 'challenges') {
       title = 'Bloom Challenges: Practical Student Tasks – Debloom 🌱';
-      canonical = 'https://debloom.org/challenges';
+      canonical = `${origin}/challenges`;
     } else if (currentView === 'blog' || currentView === 'skills') {
       title = 'Debloom Guides & Practical Skills – Debloom 🌱';
-      canonical = 'https://debloom.org/blog';
+      canonical = `${origin}/blog`;
     } else if (currentView === 'submit') {
       title = 'Submit to Debloom: Opportunities, Tools & Challenge Entries 🌱';
-      canonical = 'https://debloom.org/submit';
+      canonical = `${origin}/submit`;
     } else if (currentView === 'about') {
       title = 'About Debloom – Student Platform by Debbie 🌱';
       desc = 'Debloom is a student-focused platform created by Debbie to help young people discover useful knowledge, practical skills, and opportunities beyond the classroom.';
-      canonical = 'https://debloom.org/about';
+      canonical = `${origin}/about`;
     } else if (currentView === 'admin') {
       title = 'Debloom CMS Admin Center';
     }
@@ -264,7 +312,7 @@ export default function App() {
       document.head.appendChild(canonicalTag);
     }
     canonicalTag.setAttribute('href', canonical);
-  }, [currentView, selectedArticle]);
+  }, [currentView, selectedArticle, selectedOpportunity]);
 
   // Global keyboard shortcuts (Cmd+K for search)
   useEffect(() => {
@@ -293,6 +341,7 @@ export default function App() {
     if (view === 'article-detail' && param) {
       const art = articles.find(a => a.slug === param || a.id === param);
       setRequestedSlug(param);
+      setSelectedOpportunity(null);
       setSelectedArticle(art || null);
       setCurrentView('article-detail');
       if (typeof window !== 'undefined' && window.history) {
@@ -300,8 +349,20 @@ export default function App() {
       }
       return;
     }
+    if (view === 'opportunity-detail' && param) {
+      const opp = opportunities.find(o => (o.slug || '').toLowerCase() === param.toLowerCase() || o.id === param);
+      setRequestedSlug(param);
+      setSelectedArticle(null);
+      setSelectedOpportunity(opp || null);
+      setCurrentView('opportunity-detail');
+      if (typeof window !== 'undefined' && window.history) {
+        window.history.pushState(null, '', `/opportunities/${opp ? (opp.slug || opp.id) : param}`);
+      }
+      return;
+    }
 
     setSelectedArticle(null);
+    setSelectedOpportunity(null);
     setRequestedSlug(null);
     setCurrentView(view);
     if (typeof window !== 'undefined' && window.history) {
@@ -326,6 +387,27 @@ export default function App() {
     setCurrentView('blog');
     if (typeof window !== 'undefined' && window.history) {
       window.history.pushState(null, '', '/blog');
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleSelectOpportunity = (opportunity: Opportunity) => {
+    setSelectedOpportunity(opportunity);
+    const targetSlug = opportunity.slug || opportunity.id;
+    setRequestedSlug(targetSlug);
+    setCurrentView('opportunity-detail');
+    if (typeof window !== 'undefined' && window.history) {
+      window.history.pushState(null, '', `/opportunities/${targetSlug}`);
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleBackToOpportunities = () => {
+    setSelectedOpportunity(null);
+    setRequestedSlug(null);
+    setCurrentView('opportunities');
+    if (typeof window !== 'undefined' && window.history) {
+      window.history.pushState(null, '', '/opportunities');
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -356,7 +438,7 @@ export default function App() {
     if (type === 'article') {
       handleSelectArticle(item);
     } else if (type === 'opportunity') {
-      setCurrentView('opportunities');
+      handleSelectOpportunity(item);
     } else if (type === 'resource') {
       setCurrentView('resources');
     } else if (type === 'challenge') {
@@ -433,6 +515,7 @@ export default function App() {
             onNavigate={handleNavigate}
             onSelectArticle={handleSelectArticle}
             onSelectChallenge={handleSelectChallenge}
+            onSelectOpportunity={handleSelectOpportunity}
           />
         )}
 
@@ -443,7 +526,7 @@ export default function App() {
             resources={resources}
             challenges={challenges}
             onSelectArticle={handleSelectArticle}
-            onSelectOpportunity={() => setCurrentView('opportunities')}
+            onSelectOpportunity={handleSelectOpportunity}
             onSelectResource={() => setCurrentView('resources')}
             onSelectChallenge={handleSelectChallenge}
             onOpenReportModal={handleOpenReportModal}
@@ -497,11 +580,50 @@ export default function App() {
           )
         )}
 
+        {currentView === 'opportunity-detail' && (
+          selectedOpportunity ? (
+            <OpportunityDetailView
+              opportunity={selectedOpportunity}
+              allOpportunities={opportunities}
+              settings={settings}
+              onBack={handleBackToOpportunities}
+              onSelectOpportunity={handleSelectOpportunity}
+              onOpenReportModal={handleOpenReportModal}
+              onToast={(msg) => setToastMessage(msg)}
+              onNavigate={handleNavigate}
+            />
+          ) : isOpportunityLoading ? (
+            <div className="max-w-3xl mx-auto px-4 py-24 text-center space-y-4">
+              <div className="w-8 h-8 border-2 border-[#163323] border-t-transparent rounded-full animate-spin mx-auto" />
+              <p className="text-xs text-[#57615C] font-mono">Loading opportunity from Debloom archive...</p>
+            </div>
+          ) : (
+            <div className="max-w-xl mx-auto px-4 py-24 text-center space-y-4">
+              <div className="w-12 h-12 rounded-full bg-[#EFECE1] text-[#163323] flex items-center justify-center mx-auto text-xl shadow-xs">
+                🎓
+              </div>
+              <h1 className="font-editorial text-3xl font-bold text-[#163323]">Opportunity Not Found</h1>
+              <p className="text-sm text-[#57615C] leading-relaxed">
+                We couldn’t find an opportunity at this address. The deadline may have passed or the program was moved.
+              </p>
+              <div className="pt-2">
+                <button
+                  onClick={handleBackToOpportunities}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#163323] text-white text-xs font-semibold hover:bg-[#27523D] transition-colors"
+                >
+                  ← Return to Opportunities
+                </button>
+              </div>
+            </div>
+          )
+        )}
+
         {currentView === 'opportunities' && (
           <OpportunitiesView
             opportunities={opportunities}
             onOpenReportModal={handleOpenReportModal}
             onOpenSubmit={() => handleOpenSubmit()}
+            onSelectOpportunity={handleSelectOpportunity}
           />
         )}
 

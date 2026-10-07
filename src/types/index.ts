@@ -36,6 +36,7 @@ export type OpportunityStatus =
 export interface Opportunity {
   id: string;
   title: string;
+  slug?: string;
   organizer: string;
   description: string;
   category: 'Scholarship' | 'Fellowship' | 'Internship' | 'Competition' | 'Youth Program' | 'Bootcamp';
@@ -51,6 +52,11 @@ export interface Opportunity {
   lastVerifiedDate: string;
   status: OpportunityStatus;
   clicks?: number;
+  featuredImage?: string;
+  imageAltText?: string;
+  seoTitle?: string;
+  metaDescription?: string;
+  canonicalUrl?: string;
 }
 
 export interface Resource {
@@ -146,7 +152,7 @@ export interface BloomOfTheWeek {
 
 export interface AnalyticsEvent {
   id: string;
-  type: 'article_view' | 'opportunity_click' | 'resource_click' | 'challenge_submit' | 'telegram_click' | 'search_query';
+  type: 'article_view' | 'opportunity_view' | 'opportunity_click' | 'resource_click' | 'challenge_submit' | 'telegram_click' | 'search_query';
   detail: string;
   timestamp: string;
 }

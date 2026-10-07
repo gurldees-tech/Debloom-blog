@@ -23,12 +23,14 @@ interface OpportunitiesViewProps {
   opportunities: Opportunity[];
   onOpenReportModal: (type: 'opportunity' | 'resource' | 'article', id: string, title: string) => void;
   onOpenSubmit: () => void;
+  onSelectOpportunity?: (opp: Opportunity) => void;
 }
 
 export const OpportunitiesView: React.FC<OpportunitiesViewProps> = ({
   opportunities,
   onOpenReportModal,
   onOpenSubmit,
+  onSelectOpportunity,
 }) => {
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -42,17 +44,24 @@ export const OpportunitiesView: React.FC<OpportunitiesViewProps> = ({
       const params = new URLSearchParams(window.location.search);
       const targetId = params.get('id');
       if (targetId) {
-        const found = opportunities.find(o => o.id === targetId);
-        if (found) setSelectedOpp(found);
+        const found = opportunities.find(o => o.id === targetId || o.slug === targetId);
+        if (found) {
+          if (onSelectOpportunity) onSelectOpportunity(found);
+          else setSelectedOpp(found);
+        }
       }
     }
-  }, [opportunities]);
+  }, [opportunities, onSelectOpportunity]);
 
   const handleSelectOpp = (opp: Opportunity | null) => {
+    if (opp && onSelectOpportunity) {
+      onSelectOpportunity(opp);
+      return;
+    }
     setSelectedOpp(opp);
     if (typeof window !== 'undefined' && window.history) {
       if (opp) {
-        window.history.pushState(null, '', `/opportunities?id=${encodeURIComponent(opp.id)}`);
+        window.history.pushState(null, '', `/opportunities/${opp.slug || opp.id}`);
       } else {
         window.history.pushState(null, '', '/opportunities');
       }
@@ -61,7 +70,7 @@ export const OpportunitiesView: React.FC<OpportunitiesViewProps> = ({
 
   const handleCopyLink = (opp: Opportunity, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    const url = `${window.location.origin}/opportunities?id=${encodeURIComponent(opp.id)}`;
+    const url = `${window.location.origin}/opportunities/${opp.slug || opp.id}`;
     navigator.clipboard.writeText(url);
     setCopiedId(opp.id);
     setTimeout(() => setCopiedId(null), 2000);

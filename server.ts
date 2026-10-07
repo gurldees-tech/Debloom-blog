@@ -580,6 +580,20 @@ app.get('/api/articles/slug/:slug', (req: Request, res: Response) => {
   res.json(article);
 });
 
+app.get('/api/opportunities/slug/:slug', (req: Request, res: Response) => {
+  const db = readDb();
+  const rawSlug = (req.params.slug || '').trim().toLowerCase();
+  const opp = db.opportunities.find((o) => {
+    const oppSlug = (o.slug || o.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')).toLowerCase();
+    return oppSlug === rawSlug || o.id === rawSlug || oppSlug.startsWith(rawSlug) || (rawSlug.length > 15 && rawSlug.startsWith(oppSlug));
+  });
+  if (!opp) {
+    res.status(404).json({ error: 'Opportunity not found' });
+    return;
+  }
+  res.json(opp);
+});
+
 app.post('/api/articles/:id/view', (req: Request, res: Response) => {
   const db = readDb();
   const article = db.articles.find((a) => a.id === req.params.id);
@@ -968,6 +982,22 @@ app.get('/sitemap.xml', (_req: Request, res: Response) => {
   </url>`;
   }
 
+  const publicOpportunities = (db.opportunities || []).filter(
+    (o) => o.status === 'Verified/Open' || o.status === 'Closing Soon' || o.status === 'Verified' || o.status === 'Open'
+  );
+  for (const opp of publicOpportunities) {
+    const oppSlug = opp.slug || opp.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    if (oppSlug) {
+      xml += `
+  <url>
+    <loc>${baseUrl}/opportunities/${oppSlug}</loc>
+    <lastmod>${opp.lastVerified || opp.postedDate || new Date().toISOString().split('T')[0]}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>`;
+    }
+  }
+
   xml += `\n</urlset>`;
 
   res.header('Content-Type', 'application/xml');
@@ -1158,6 +1188,60 @@ async function startServer() {
       "datePublished": "${article.publishDate || ''}",
       "dateModified": "${article.updatedDate || article.publishDate || ''}",
       "mainEntityOfPage": "${fullUrl}"
+    }
+    </script>
+`;
+        html = html.replace('</head>', `${extraTags}</head>`);
+      }
+      res.send(html);
+    });
+
+    // Per-opportunity SSR meta injection for social preview cards, search crawlers & direct visitors
+    app.get('/opportunities/:slug', (req: Request, res: Response) => {
+      const slug = (req.params.slug || '').trim().toLowerCase();
+      const db = readDb();
+      const opp = db.opportunities.find((o) => {
+        const oppSlug = (o.slug || o.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')).toLowerCase();
+        return oppSlug === slug || o.id === slug;
+      });
+      const distIndex = path.resolve(__dirname, 'dist', 'index.html');
+      if (!fs.existsSync(distIndex)) {
+        res.status(404).send('Build index not found');
+        return;
+      }
+      let html = fs.readFileSync(distIndex, 'utf-8');
+      if (opp) {
+        const title = `${opp.seoTitle || opp.title} – Debloom 🌱`;
+        const desc = (opp.metaDescription || opp.description?.slice(0, 160) || '').replace(/"/g, '&quot;');
+        const ogTitle = title.replace(/"/g, '&quot;');
+        const oppSlug = opp.slug || opp.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+        const fullUrl = `https://debloom.org/opportunities/${oppSlug}`;
+        const ogImage = opp.featuredImage || 'https://debloom.org/og-default.jpg';
+
+        html = html
+          .replace(/<title>.*?<\/title>/i, `<title>${title}</title>`)
+          .replace(/<meta\s+name="description"\s+content=".*?"\s*\/?>/i, `<meta name="description" content="${desc}" />`)
+          .replace(/<meta\s+property="og:title"\s+content=".*?"\s*\/?>/i, `<meta property="og:title" content="${ogTitle}" />`)
+          .replace(/<meta\s+property="og:description"\s+content=".*?"\s*\/?>/i, `<meta property="og:description" content="${desc}" />`)
+          .replace(/<meta\s+name="twitter:title"\s+content=".*?"\s*\/?>/i, `<meta name="twitter:title" content="${ogTitle}" />`)
+          .replace(/<meta\s+name="twitter:description"\s+content=".*?"\s*\/?>/i, `<meta name="twitter:description" content="${desc}" />`);
+
+        const extraTags = `
+    <link rel="canonical" href="${fullUrl}" />
+    <meta property="og:url" content="${fullUrl}" />
+    <meta property="og:image" content="${ogImage}" />
+    <meta property="og:type" content="website" />
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "EducationalOccupationalCredential",
+      "name": "${opp.title.replace(/"/g, '\\"')}",
+      "description": "${(opp.metaDescription || opp.description?.slice(0, 160) || '').replace(/"/g, '\\"')}",
+      "provider": {
+        "@type": "Organization",
+        "name": "${(opp.organizer || 'Official Provider').replace(/"/g, '\\"')}"
+      },
+      "url": "${fullUrl}"
     }
     </script>
 `;

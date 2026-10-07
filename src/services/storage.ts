@@ -280,6 +280,34 @@ export const opportunityService = {
     const all = safeGet<Opportunity[]>(STORAGE_KEYS.OPPORTUNITIES, INITIAL_OPPORTUNITIES);
     return all.find(o => o.id === id);
   },
+  getBySlug: (slug: string): Opportunity | undefined => {
+    const all = safeGet<Opportunity[]>(STORAGE_KEYS.OPPORTUNITIES, INITIAL_OPPORTUNITIES);
+    const clean = (slug || '').trim().toLowerCase();
+    return all.find(o => {
+      const oppSlug = (o.slug || o.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')).toLowerCase();
+      return oppSlug === clean || o.id === slug || oppSlug.startsWith(clean) || (clean.length > 15 && clean.startsWith(oppSlug));
+    });
+  },
+  fetchBySlug: async (slug: string): Promise<Opportunity | null> => {
+    const clean = (slug || '').trim().toLowerCase();
+    const cached = opportunityService.getBySlug(clean);
+    if (cached) return cached;
+    try {
+      const res = await fetch(`/api/opportunities/slug/${encodeURIComponent(clean)}`);
+      if (res.ok) {
+        const opp: Opportunity = await res.json();
+        const all = safeGet<Opportunity[]>(STORAGE_KEYS.OPPORTUNITIES, INITIAL_OPPORTUNITIES);
+        const idx = all.findIndex(o => o.id === opp.id);
+        if (idx >= 0) all[idx] = opp;
+        else all.unshift(opp);
+        safeSet(STORAGE_KEYS.OPPORTUNITIES, all);
+        return opp;
+      }
+    } catch (e) {
+      console.warn('Network error loading opportunity by slug:', e);
+    }
+    return null;
+  },
   save: async (opp: Opportunity): Promise<Opportunity> => {
     const res = await fetch('/api/admin/opportunities', {
       method: 'POST',

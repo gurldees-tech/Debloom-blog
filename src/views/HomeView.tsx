@@ -25,6 +25,7 @@ interface HomeViewProps {
   onNavigate: (view: string, param?: string) => void;
   onSelectArticle: (article: Article) => void;
   onSelectChallenge: (challenge: BloomChallenge) => void;
+  onSelectOpportunity?: (opp: Opportunity) => void;
 }
 
 export const HomeView: React.FC<HomeViewProps> = ({
@@ -36,6 +37,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
   onNavigate,
   onSelectArticle,
   onSelectChallenge,
+  onSelectOpportunity,
 }) => {
   const publishedArticles = articles.filter(a => a.status === 'Published');
   const activeChallenges = challenges.filter(c => c.status === 'Active');
