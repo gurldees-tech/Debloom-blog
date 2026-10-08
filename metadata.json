@@ -1,6 +1,6 @@
 {
   "name": "Debloom",
-  "description": "Start where you are. Bloom from there. A student-focused platform to discover opportunities, practical skills, verified resources, and challenges beyond the classroom.",
+  "description": "Discover useful skills, opportunities, resources, practical guides and challenges for students. Start where you are. Bloom from there. 🌱",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

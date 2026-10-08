@@ -78,6 +78,22 @@ function parseInitialPath(): { view: string; slug: string | null } {
     return { view: 'opportunities', slug: null };
   }
 
+  if (pathname.startsWith('/resources/')) {
+    const slug = pathname.replace(/^\/resources\//, '').split('/')[0].trim();
+    if (slug) {
+      return { view: 'resources', slug };
+    }
+    return { view: 'resources', slug: null };
+  }
+
+  if (pathname.startsWith('/challenges/')) {
+    const slug = pathname.replace(/^\/challenges\//, '').split('/')[0].trim();
+    if (slug) {
+      return { view: 'challenges', slug };
+    }
+    return { view: 'challenges', slug: null };
+  }
+
   const p = pathname.replace(/^\//, '').toLowerCase().trim();
   if (p === 'admin') return { view: 'admin', slug: null };
   if (p === 'explore') return { view: 'explore', slug: null };
@@ -202,6 +218,26 @@ export default function App() {
     }
   }, [currentView, requestedSlug, selectedOpportunity]);
 
+  // Ensure browser address bar updates to canonical slug if legacy numeric or ID URL was visited
+  useEffect(() => {
+    if (currentView === 'article-detail' && selectedArticle && selectedArticle.slug) {
+      const canonicalPath = `/blog/${selectedArticle.slug}`;
+      if (typeof window !== 'undefined' && window.location.pathname !== canonicalPath) {
+        window.history.replaceState(null, '', canonicalPath);
+      }
+    }
+  }, [currentView, selectedArticle]);
+
+  useEffect(() => {
+    if (currentView === 'opportunity-detail' && selectedOpportunity) {
+      const canonicalSlug = selectedOpportunity.slug || selectedOpportunity.id;
+      const canonicalPath = `/opportunities/${canonicalSlug}`;
+      if (typeof window !== 'undefined' && window.location.pathname !== canonicalPath) {
+        window.history.replaceState(null, '', canonicalPath);
+      }
+    }
+  }, [currentView, selectedOpportunity]);
+
   // Browser Back/Forward navigation listener
   useEffect(() => {
     const handlePopState = () => {
@@ -245,8 +281,8 @@ export default function App() {
   // Synchronize document title and canonical meta for SEO
   useEffect(() => {
     const origin = typeof window !== 'undefined' ? window.location.origin : 'https://debloom.org';
-    let title = 'Debloom — Skills, Opportunities & Resources for Students';
-    let desc = 'Discover practical skills, scholarships, opportunities, learning resources and useful guides to help you prepare for university, work and life beyond school.';
+    let title = 'Debloom | Skills, Opportunities & Resources for Students';
+    let desc = 'Discover useful skills, opportunities, resources, practical guides and challenges for students. Start where you are. Bloom from there. 🌱';
     let canonical = `${origin}/`;
 
     if (currentView === 'article-detail' && selectedArticle) {

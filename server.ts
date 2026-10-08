@@ -8,6 +8,7 @@ import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { initializeApp } from 'firebase/app';
 import { initializeFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
+import sharp from 'sharp';
 
 dotenv.config();
 
@@ -998,6 +999,33 @@ app.get('/sitemap.xml', (_req: Request, res: Response) => {
     }
   }
 
+  const publicResources = (db.resources || []).filter((r) => r.status === 'Published');
+  for (const res of publicResources) {
+    const resSlug = res.slug || res.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    if (resSlug) {
+      xml += `
+  <url>
+    <loc>${baseUrl}/resources/${resSlug}</loc>
+    <lastmod>${res.lastVerifiedDate || new Date().toISOString().split('T')[0]}</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>`;
+    }
+  }
+
+  const activeChallenges = (db.challenges || []).filter((c) => c.status === 'Active');
+  for (const chal of activeChallenges) {
+    const chalSlug = chal.slug || chal.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    if (chalSlug) {
+      xml += `
+  <url>
+    <loc>${baseUrl}/challenges/${chalSlug}</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>`;
+    }
+  }
+
   xml += `\n</urlset>`;
 
   res.header('Content-Type', 'application/xml');
@@ -1039,7 +1067,7 @@ app.get('/api/download-zip', (_req: Request, res: Response) => {
   }
 });
 
-// Image upload endpoint (supports base64 data URLs & persists to Firestore)
+// Image upload endpoint (optimizes with sharp & persists to both local disk and Google Cloud Firestore)
 app.post('/api/upload', async (req: Request, res: Response) => {
   try {
     const { image, filename } = req.body;
@@ -1050,7 +1078,7 @@ app.post('/api/upload', async (req: Request, res: Response) => {
 
     // Direct HTTP(S) link passthrough
     if (image.startsWith('http://') || image.startsWith('https://')) {
-      res.json({ url: image });
+      res.json({ success: true, url: image });
       return;
     }
 
@@ -1063,42 +1091,129 @@ app.post('/api/upload', async (req: Request, res: Response) => {
 
     const mimeType = matches[1];
     const base64Data = matches[2];
-    const buffer = Buffer.from(base64Data, 'base64');
+    const rawBuffer = Buffer.from(base64Data, 'base64');
 
+    if (rawBuffer.length > 10 * 1024 * 1024) {
+      res.status(400).json({ error: 'File size exceeds maximum allowable limit of 10MB.' });
+      return;
+    }
+
+    let outputBuffer = rawBuffer;
+    let finalMimeType = mimeType;
     let ext = 'jpg';
-    if (mimeType.includes('png')) ext = 'png';
-    else if (mimeType.includes('webp')) ext = 'webp';
-    else if (mimeType.includes('gif')) ext = 'gif';
-    else if (mimeType.includes('svg')) ext = 'svg';
+    let imgWidth: number | undefined;
+    let imgHeight: number | undefined;
+
+    try {
+      const img = sharp(rawBuffer);
+      const meta = await img.metadata();
+      imgWidth = meta.width;
+      imgHeight = meta.height;
+
+      if (meta.format === 'png' || mimeType.includes('png')) {
+        outputBuffer = await sharp(rawBuffer)
+          .resize({ width: 1600, withoutEnlargement: true })
+          .png({ quality: 85, compressionLevel: 8 })
+          .toBuffer();
+        finalMimeType = 'image/png';
+        ext = 'png';
+      } else if (meta.format === 'webp' || mimeType.includes('webp')) {
+        outputBuffer = await sharp(rawBuffer)
+          .resize({ width: 1600, withoutEnlargement: true })
+          .webp({ quality: 85 })
+          .toBuffer();
+        finalMimeType = 'image/webp';
+        ext = 'webp';
+      } else if (meta.format === 'gif' || mimeType.includes('gif')) {
+        ext = 'gif';
+        finalMimeType = 'image/gif';
+      } else if (meta.format === 'svg' || mimeType.includes('svg')) {
+        ext = 'svg';
+        finalMimeType = 'image/svg+xml';
+      } else {
+        outputBuffer = await sharp(rawBuffer)
+          .resize({ width: 1600, withoutEnlargement: true })
+          .jpeg({ quality: 85, mozjpeg: true })
+          .toBuffer();
+        finalMimeType = 'image/jpeg';
+        ext = 'jpg';
+      }
+    } catch (procErr) {
+      console.warn('Sharp optimization warning, falling back to original buffer:', procErr);
+    }
 
     const safePrefix = (filename ? filename.replace(/[^a-zA-Z0-9_-]/g, '_') : 'img').slice(0, 30);
     const safeName = `${safePrefix}_${Date.now()}.${ext}`;
     const filePath = path.join(UPLOADS_DIR, safeName);
 
-    // Save to local container disk
-    fs.writeFileSync(filePath, buffer);
+    // Save to local container disk for immediate sub-millisecond serving
+    fs.writeFileSync(filePath, outputBuffer);
 
-    // Save to Google Cloud Firestore media library for permanent survival across container restarts
+    // Save permanently to Google Cloud Firestore media library
+    // This guarantees images survive container restarts and new deployments
     if (firestoreDb) {
       try {
         const mediaRef = doc(firestoreDb, 'media_library', safeName);
         await setDoc(mediaRef, {
           filename: safeName,
-          contentType: mimeType,
-          base64: base64Data,
+          contentType: finalMimeType,
+          base64: outputBuffer.toString('base64'),
+          fileSize: outputBuffer.length,
+          width: imgWidth || null,
+          height: imgHeight || null,
           createdAt: Date.now(),
         });
-        console.log('✅ Image permanently saved to Firestore media library:', safeName);
+        console.log(`✅ Image permanently secured in Firestore media library: ${safeName} (${outputBuffer.length} bytes)`);
       } catch (err) {
-        console.warn('Could not save image to Firestore:', err);
+        console.warn('Could not save image to Firestore media library:', err);
       }
     }
 
-    res.json({ url: `/uploads/${safeName}` });
+    res.json({
+      success: true,
+      url: `/uploads/${safeName}`,
+      filename: safeName,
+      fileSize: outputBuffer.length,
+      mimeType: finalMimeType,
+      width: imgWidth,
+      height: imgHeight,
+    });
   } catch (err: any) {
-    console.error('Upload error:', err);
-    res.status(500).json({ error: 'Failed to process image upload' });
+    console.error('Upload processing error:', err);
+    res.status(500).json({ error: 'Failed to process and store image upload' });
   }
+});
+
+// ----------------- CLEAN DESCRIPTIVE URLS: 301 PERMANENT REDIRECTS -----------------
+// Redirects legacy numeric or database IDs (e.g., /blog/482917, /opportunities/839201)
+// to their canonical human-readable slug URLs, eliminating duplicate content and preserving SEO rank.
+app.get('/blog/:slug', (req: Request, res: Response, next: NextFunction) => {
+  const rawParam = (req.params.slug || '').trim().toLowerCase();
+  const db = readDb();
+  const article = db.articles.find((a) => (a.slug || '').toLowerCase() === rawParam || a.id.toLowerCase() === rawParam);
+  if (article && article.status === 'Published') {
+    const canonicalSlug = (article.slug || '').toLowerCase();
+    if (canonicalSlug && rawParam !== canonicalSlug) {
+      return res.redirect(301, `/blog/${article.slug}`);
+    }
+  }
+  next();
+});
+
+app.get('/opportunities/:slug', (req: Request, res: Response, next: NextFunction) => {
+  const rawParam = (req.params.slug || '').trim().toLowerCase();
+  const db = readDb();
+  const opp = db.opportunities.find((o) => {
+    const oppSlug = (o.slug || o.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')).toLowerCase();
+    return oppSlug === rawParam || o.id.toLowerCase() === rawParam || (rawParam.length > 10 && oppSlug.startsWith(rawParam));
+  });
+  if (opp) {
+    const canonicalSlug = (opp.slug || opp.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')).toLowerCase();
+    if (canonicalSlug && rawParam !== canonicalSlug) {
+      return res.redirect(301, `/opportunities/${canonicalSlug}`);
+    }
+  }
+  next();
 });
 
 // ----------------- VITE MIDDLEWARE & SERVER STARTUP -----------------

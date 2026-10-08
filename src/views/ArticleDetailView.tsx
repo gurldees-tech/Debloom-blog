@@ -51,6 +51,14 @@ export const ArticleDetailView: React.FC<ArticleDetailViewProps> = ({
     window.scrollTo(0, 0);
     document.title = `${article.seoTitle || article.title} – Debloom 🌱`;
 
+    const ogImg = document.querySelector('meta[property="og:image"]');
+    const twitterImg = document.querySelector('meta[name="twitter:image"]');
+    const imgUrl = article.featuredImage 
+      ? (article.featuredImage.startsWith('http') ? article.featuredImage : `${window.location.origin}${article.featuredImage}`)
+      : 'https://debloom.org/images/debloom-social-card.png';
+    if (ogImg) ogImg.setAttribute('content', imgUrl);
+    if (twitterImg) twitterImg.setAttribute('content', imgUrl);
+
     // Session-guarded view count increment to prevent accidental refresh inflation
     const sessionKey = `debloom_viewed_${article.slug || article.id}`;
     if (typeof window !== 'undefined' && !sessionStorage.getItem(sessionKey)) {

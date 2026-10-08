@@ -175,7 +175,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Image assistant states
   const [imageModal, setImageModal] = useState<{
     isOpen: boolean;
-    target: 'featured' | 'body';
+    target: 'featured' | 'body' | 'opportunity';
   }>({ isOpen: false, target: 'featured' });
   const [imageCaptionInput, setImageCaptionInput] = useState('');
   const [customImageUrlInput, setCustomImageUrlInput] = useState('');
@@ -357,12 +357,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   // Image upload and selection handlers
-  const handleUploadFile = async (e: React.ChangeEvent<HTMLInputElement>, target: 'featured' | 'body') => {
+  const handleUploadFile = async (e: React.ChangeEvent<HTMLInputElement>, target: 'featured' | 'body' | 'opportunity') => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (!file.type.startsWith('image/')) {
+      onToast('Please select a valid image file (JPEG, PNG, WebP, GIF, or SVG).');
+      return;
+    }
+
     if (file.size > 8 * 1024 * 1024) {
-      onToast('Image is larger than 8MB. Please choose a smaller photo.');
+      onToast('Image is larger than 8MB. Please select a smaller photo.');
       return;
     }
 
@@ -370,42 +375,68 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const reader = new FileReader();
     reader.onload = async () => {
       const base64Data = reader.result as string;
-      let finalUrl = base64Data;
 
       try {
         const response = await fetch('/api/upload', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(currentUser.token ? { 'Authorization': `Bearer ${currentUser.token}` } : {})
+          },
           body: JSON.stringify({ image: base64Data, filename: file.name }),
         });
-        if (response.ok) {
-          const data = await response.json();
-          if (data.url) finalUrl = data.url;
+        
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData.error || `Upload failed with status ${response.status}`);
         }
-      } catch (err) {
-        console.warn('Direct upload error, falling back to local data URL:', err);
-      }
 
-      setIsUploading(false);
-      applySelectedImage(finalUrl, target, imageCaptionInput || file.name.replace(/\.[^/.]+$/, ''));
+        const data = await response.json();
+        if (!data.url) {
+          throw new Error('Server did not return a valid persistent storage URL');
+        }
+
+        setIsUploading(false);
+        applySelectedImage(data.url, target, imageCaptionInput || file.name.replace(/\.[^/.]+$/, ''));
+        onToast('Image permanently stored in cloud media library! ☁️');
+      } catch (err: any) {
+        setIsUploading(false);
+        console.error('Direct upload error:', err);
+        onToast(`Image upload failed: ${err.message || 'Could not save to persistent storage'}`);
+      }
     };
     reader.readAsDataURL(file);
   };
 
-  const applySelectedImage = (url: string, target: 'featured' | 'body', caption?: string) => {
-    if (!editingArticle) return;
-
-    if (target === 'featured') {
-      setEditingArticle({ ...editingArticle, featuredImage: url });
-      onToast('Featured banner image updated! ✨');
+  const applySelectedImage = (url: string, target: 'featured' | 'body' | 'opportunity', caption?: string) => {
+    if (target === 'opportunity') {
+      if (editingOpp) {
+        setEditingOpp({
+          ...editingOpp,
+          featuredImage: url,
+          imageAltText: caption || editingOpp.imageAltText || editingOpp.title
+        });
+        onToast('Opportunity banner image attached! ✨');
+      }
+    } else if (target === 'featured') {
+      if (editingArticle) {
+        setEditingArticle({
+          ...editingArticle,
+          featuredImage: url,
+          imageAltText: caption || editingArticle.imageAltText || editingArticle.title
+        });
+        onToast('Featured banner image updated! ✨');
+      }
     } else {
-      const cleanCaption = caption ? caption.trim() : 'Article illustration';
-      const markdownImage = `\n\n![${cleanCaption}](${url})\n\n`;
-      setEditingArticle({
-        ...editingArticle,
-        body: (editingArticle.body || '') + markdownImage,
-      });
-      onToast('Image inserted into article body! 🖼️');
+      if (editingArticle) {
+        const cleanCaption = caption ? caption.trim() : 'Article illustration';
+        const markdownImage = `\n\n![${cleanCaption}](${url})\n\n`;
+        setEditingArticle({
+          ...editingArticle,
+          body: (editingArticle.body || '') + markdownImage,
+        });
+        onToast('Image inserted into article body! 🖼️');
+      }
     }
 
     setImageModal({ isOpen: false, target: 'featured' });
@@ -456,6 +487,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const newOpp: Opportunity = {
       id: 'opp-' + Date.now(),
       title: '',
+      slug: '',
       organizer: '',
       description: '',
       category: 'Scholarship',
@@ -469,7 +501,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       applicationLink: '',
       lastVerifiedDate: new Date().toISOString().split('T')[0],
       status: 'Verified/Open',
-      clicks: 0
+      clicks: 0,
+      featuredImage: '',
+      imageAltText: '',
+      seoTitle: '',
+      metaDescription: ''
     };
     setEditingOpp(newOpp);
     setIsOppModalOpen(true);
@@ -478,12 +514,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleSaveOpp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingOpp) return;
+    if (!editingOpp.title.trim()) {
+      onToast('Please provide a title for the opportunity.');
+      return;
+    }
+    const autoSlug = editingOpp.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    const finalOpp: Opportunity = {
+      ...editingOpp,
+      slug: (editingOpp.slug && editingOpp.slug.trim()) ? editingOpp.slug.trim().toLowerCase() : autoSlug,
+    };
     try {
-      await opportunityService.save(editingOpp);
+      const saved = await opportunityService.save(finalOpp);
       setIsOppModalOpen(false);
       setEditingOpp(null);
       onRefreshData();
-      onToast(`Opportunity "${editingOpp.title}" saved to server!`);
+      onToast(`Opportunity "${saved.title}" saved! (URL: /opportunities/${saved.slug || saved.id})`);
     } catch (err: any) {
       onToast(`Failed to save opportunity: ${err.message}`);
     }
@@ -2304,7 +2349,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               {activeImageTab === 'library' && (
                 <div className="space-y-3">
                   <p className="text-xs text-[#57615C]">
-                    Click any photo to instantly {imageModal.target === 'featured' ? 'set it as your blog banner' : 'insert it into your article'}:
+                    Click any photo to instantly {imageModal.target === 'opportunity' ? 'set it as your opportunity banner' : imageModal.target === 'featured' ? 'set it as your blog banner' : 'insert it into your article'}:
                   </p>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-96 overflow-y-auto pr-1">
                     {CURATED_STUDY_IMAGES.map((img, i) => (
@@ -2369,7 +2414,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       onClick={() => applySelectedImage(customImageUrlInput, imageModal.target, imageCaptionInput)}
                       className="px-5 py-2.5 bg-[#163323] text-white text-xs font-semibold rounded-xl hover:bg-[#27523D] disabled:opacity-50 transition-colors cursor-pointer"
                     >
-                      {imageModal.target === 'featured' ? 'Set as Featured Banner' : 'Insert into Article'}
+                      {imageModal.target === 'opportunity' ? 'Set as Opportunity Banner' : imageModal.target === 'featured' ? 'Set as Featured Banner' : 'Insert into Article'}
                     </button>
                   </div>
                 </div>
@@ -2595,11 +2640,48 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     required
                     type="text"
                     value={editingOpp.title}
-                    onChange={(e) => setEditingOpp({ ...editingOpp, title: e.target.value })}
+                    onChange={(e) => {
+                      const newTitle = e.target.value;
+                      const autoSlug = newTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+                      setEditingOpp({ 
+                        ...editingOpp, 
+                        title: newTitle,
+                        slug: editingOpp.slug ? editingOpp.slug : autoSlug
+                      });
+                    }}
+                    placeholder="E.g., Female Scholars Foundation 2026 University Scholarship"
                     className="w-full text-xs p-2.5 rounded-lg border border-[#E5E2D9] bg-white"
                   />
                 </div>
 
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-[#1F2421]">Public URL Slug *</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const s = editingOpp.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+                        setEditingOpp({ ...editingOpp, slug: s });
+                      }}
+                      className="text-[10px] text-[#27523D] hover:underline cursor-pointer"
+                    >
+                      Regenerate
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={editingOpp.slug || ''}
+                    onChange={(e) => setEditingOpp({ ...editingOpp, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') })}
+                    placeholder="female-scholars-foundation-2026-university-scholarship"
+                    className="w-full text-xs p-2.5 rounded-lg border border-[#E5E2D9] bg-white font-mono text-[#1F2421]"
+                  />
+                  <span className="text-[10px] text-[#7B8681] mt-0.5 block">
+                    URL: /opportunities/{editingOpp.slug || 'slug'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-[#1F2421] mb-1">Organizer Institution *</label>
                   <input
@@ -2607,12 +2689,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     type="text"
                     value={editingOpp.organizer}
                     onChange={(e) => setEditingOpp({ ...editingOpp, organizer: e.target.value })}
+                    placeholder="E.g., Female Scholars Foundation"
                     className="w-full text-xs p-2.5 rounded-lg border border-[#E5E2D9] bg-white"
                   />
                 </div>
-              </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-[#1F2421] mb-1">Category</label>
                   <select
@@ -2627,13 +2708,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <option value="Youth Program">Youth Program</option>
                   </select>
                 </div>
+              </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-[#1F2421] mb-1">Region</label>
                   <input
                     type="text"
                     value={editingOpp.countryRegion}
                     onChange={(e) => setEditingOpp({ ...editingOpp, countryRegion: e.target.value })}
+                    placeholder="E.g., Nigeria, Africa, Global"
                     className="w-full text-xs p-2.5 rounded-lg border border-[#E5E2D9] bg-white"
                   />
                 </div>
@@ -2651,6 +2735,72 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <option value="Draft">Draft</option>
                   </select>
                 </div>
+              </div>
+
+              {/* Featured Image & Alt Text for Opportunity */}
+              <div className="space-y-2 p-3 bg-[#F7F5EE] rounded-xl border border-[#E5E2D9]">
+                <label className="block text-xs font-semibold text-[#1F2421] flex items-center justify-between">
+                  <span>Featured Image (Banner)</span>
+                  {editingOpp.featuredImage && (
+                    <span className="text-[10px] text-[#27523D] font-medium">✓ Image Attached</span>
+                  )}
+                </label>
+
+                {editingOpp.featuredImage ? (
+                  <div className="space-y-2">
+                    <div className="relative h-28 rounded-xl overflow-hidden border border-[#E5E2D9] bg-white group">
+                      <img 
+                        src={editingOpp.featuredImage} 
+                        alt={editingOpp.imageAltText || editingOpp.title} 
+                        className="w-full h-full object-cover" 
+                      />
+                      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 p-2">
+                        <button
+                          type="button"
+                          onClick={() => setImageModal({ isOpen: true, target: 'opportunity' })}
+                          className="px-2.5 py-1 bg-white text-[#163323] text-xs font-semibold rounded-lg shadow-sm hover:bg-[#F1F6F3] cursor-pointer"
+                        >
+                          Change
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const imgUrl = editingOpp.featuredImage || '';
+                            const full = imgUrl.startsWith('http') ? imgUrl : `${window.location.origin}${imgUrl}`;
+                            navigator.clipboard.writeText(full);
+                            onToast('Direct image link copied to clipboard! 🔗');
+                          }}
+                          className="px-2.5 py-1 bg-[#163323] text-white text-xs font-semibold rounded-lg shadow-sm hover:bg-[#27523D] cursor-pointer"
+                        >
+                          Copy Link
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingOpp({ ...editingOpp, featuredImage: '' })}
+                          className="px-2.5 py-1 bg-red-600 text-white text-xs font-semibold rounded-lg shadow-sm hover:bg-red-700 cursor-pointer"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                    <input
+                      type="text"
+                      value={editingOpp.imageAltText || ''}
+                      onChange={(e) => setEditingOpp({ ...editingOpp, imageAltText: e.target.value })}
+                      placeholder="Image alt text (Descriptive text for accessibility & SEO)..."
+                      className="w-full text-[11px] p-2 rounded-lg border border-[#E5E2D9] bg-white"
+                    />
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setImageModal({ isOpen: true, target: 'opportunity' })}
+                    className="w-full flex items-center justify-center gap-2 p-3 rounded-xl border border-dashed border-[#8FA89B] bg-white hover:bg-[#F1F6F3] text-[#163323] text-xs font-semibold transition-colors cursor-pointer"
+                  >
+                    <Camera className="w-4 h-4 text-[#27523D]" />
+                    <span>Add Opportunity Banner Image</span>
+                  </button>
+                )}
               </div>
 
               <div>
@@ -2704,6 +2854,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     type="text"
                     value={editingOpp.cost}
                     onChange={(e) => setEditingOpp({ ...editingOpp, cost: e.target.value })}
+                    className="w-full text-xs p-2.5 rounded-lg border border-[#E5E2D9] bg-white"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-[#E5E2D9]">
+                <div>
+                  <label className="block text-xs font-semibold text-[#1F2421] mb-1">SEO Title (Optional)</label>
+                  <input
+                    type="text"
+                    value={editingOpp.seoTitle || ''}
+                    onChange={(e) => setEditingOpp({ ...editingOpp, seoTitle: e.target.value })}
+                    placeholder={editingOpp.title || 'Page title for search engines'}
+                    className="w-full text-xs p-2.5 rounded-lg border border-[#E5E2D9] bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#1F2421] mb-1">SEO Meta Description (Optional)</label>
+                  <input
+                    type="text"
+                    value={editingOpp.metaDescription || ''}
+                    onChange={(e) => setEditingOpp({ ...editingOpp, metaDescription: e.target.value })}
+                    placeholder="Short description for search results"
                     className="w-full text-xs p-2.5 rounded-lg border border-[#E5E2D9] bg-white"
                   />
                 </div>

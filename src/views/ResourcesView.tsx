@@ -31,11 +31,22 @@ export const ResourcesView: React.FC<ResourcesViewProps> = ({
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const targetId = params.get('id');
-      if (targetId) {
+      const pathname = window.location.pathname;
+      let targetRes: Resource | undefined;
+      if (pathname.startsWith('/resources/')) {
+        const slug = pathname.replace(/^\/resources\//, '').replace(/\/$/, '').trim().toLowerCase();
+        if (slug) {
+          targetRes = resources.find(r => (r.slug || r.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')).toLowerCase() === slug || r.id === slug);
+        }
+      }
+      if (!targetRes) {
+        const params = new URLSearchParams(window.location.search);
+        const targetId = params.get('id');
+        if (targetId) targetRes = resources.find(r => r.id === targetId);
+      }
+      if (targetRes) {
         setTimeout(() => {
-          const el = document.getElementById(`resource-${targetId}`);
+          const el = document.getElementById(`resource-${targetRes?.id}`);
           if (el) {
             el.scrollIntoView({ behavior: 'smooth', block: 'center' });
             el.classList.add('ring-2', 'ring-[#163323]');
@@ -46,7 +57,8 @@ export const ResourcesView: React.FC<ResourcesViewProps> = ({
   }, [resources]);
 
   const handleCopyLink = (res: Resource) => {
-    const url = `${window.location.origin}/resources?id=${encodeURIComponent(res.id)}`;
+    const slug = res.slug || res.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    const url = `${window.location.origin}/resources/${slug}/`;
     navigator.clipboard.writeText(url);
     setCopiedId(res.id);
     setTimeout(() => setCopiedId(null), 2000);

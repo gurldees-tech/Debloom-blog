@@ -74,6 +74,14 @@ export const OpportunityDetailView: React.FC<OpportunityDetailViewProps> = ({
     const ogUrl = document.querySelector('meta[property="og:url"]');
     if (ogUrl) ogUrl.setAttribute('content', pageUrl);
 
+    const ogImg = document.querySelector('meta[property="og:image"]');
+    const twitterImg = document.querySelector('meta[name="twitter:image"]');
+    const imgUrl = opportunity.featuredImage 
+      ? (opportunity.featuredImage.startsWith('http') ? opportunity.featuredImage : `${window.location.origin}${opportunity.featuredImage}`)
+      : 'https://debloom.org/images/debloom-opportunity-card.png';
+    if (ogImg) ogImg.setAttribute('content', imgUrl);
+    if (twitterImg) twitterImg.setAttribute('content', imgUrl);
+
     let canonicalTag = document.querySelector('link[rel="canonical"]');
     if (!canonicalTag) {
       canonicalTag = document.createElement('link');

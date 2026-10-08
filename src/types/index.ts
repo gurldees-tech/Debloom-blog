@@ -62,6 +62,7 @@ export interface Opportunity {
 export interface Resource {
   id: string;
   name: string;
+  slug?: string;
   description: string;
   category: 'Online Learning' | 'Student Tools' | 'Skill Building' | 'Writing & Research' | 'Financial Literacy' | 'Open Courseware';
   intendedAudience: string;
@@ -79,6 +80,7 @@ export interface Resource {
 export interface BloomChallenge {
   id: string;
   title: string;
+  slug?: string;
   whatYoullDo: string;
   whatYouNeed: string;
   steps: string[];

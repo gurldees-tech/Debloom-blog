@@ -31,12 +31,23 @@ export const ChallengesView: React.FC<ChallengesViewProps> = ({
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const targetId = params.get('id');
-      if (targetId) {
-        setExpandedId(targetId);
+      const pathname = window.location.pathname;
+      let targetChal: BloomChallenge | undefined;
+      if (pathname.startsWith('/challenges/')) {
+        const slug = pathname.replace(/^\/challenges\//, '').replace(/\/$/, '').trim().toLowerCase();
+        if (slug) {
+          targetChal = challenges.find(c => (c.slug || c.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')).toLowerCase() === slug || c.id === slug);
+        }
+      }
+      if (!targetChal) {
+        const params = new URLSearchParams(window.location.search);
+        const targetId = params.get('id');
+        if (targetId) targetChal = challenges.find(c => c.id === targetId);
+      }
+      if (targetChal) {
+        setExpandedId(targetChal.id);
         setTimeout(() => {
-          const el = document.getElementById(`challenge-${targetId}`);
+          const el = document.getElementById(`challenge-${targetChal?.id}`);
           if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }, 100);
       }
@@ -45,7 +56,8 @@ export const ChallengesView: React.FC<ChallengesViewProps> = ({
 
   const handleCopyLink = (c: BloomChallenge, e: React.MouseEvent) => {
     e.stopPropagation();
-    const url = `${window.location.origin}/challenges?id=${encodeURIComponent(c.id)}`;
+    const slug = c.slug || c.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    const url = `${window.location.origin}/challenges/${slug}/`;
     navigator.clipboard.writeText(url);
     setCopiedId(c.id);
     setTimeout(() => setCopiedId(null), 2000);
