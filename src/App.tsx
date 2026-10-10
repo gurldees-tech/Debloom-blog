@@ -148,7 +148,24 @@ export default function App() {
   // UI Modals
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isAdminLoginOpen, setIsAdminLoginOpen] = useState(false);
+  const [isStealthUnlocked, setIsStealthUnlocked] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const handleToggleStealth = useCallback(() => {
+    setIsStealthUnlocked((prev) => {
+      const next = !prev;
+      if (next) {
+        setToastMessage('Stealth sequence recognized: Staff login unlocked 🛡️');
+        if (typeof navigator !== 'undefined' && navigator.vibrate) {
+          try { navigator.vibrate([40, 60, 40]); } catch (_) {}
+        }
+        setIsAdminLoginOpen(true);
+      } else {
+        setToastMessage('Stealth mode active: Platform is public-only.');
+      }
+      return next;
+    });
+  }, []);
 
   // Report Modal Data
   const [reportModalData, setReportModalData] = useState<{
@@ -350,16 +367,35 @@ export default function App() {
     canonicalTag.setAttribute('href', canonical);
   }, [currentView, selectedArticle, selectedOpportunity]);
 
-  // Global keyboard shortcuts (Cmd+K for search)
+  // Global keyboard shortcuts (Cmd+K for search, Ctrl+Shift+Alt+A for Stealth Mode toggle)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setIsSearchOpen(true);
+        return;
+      }
+      // Stealth Mode sequence: Ctrl+Shift+Alt+A (or Cmd+Shift+Alt+A / Ctrl+Shift+A)
+      const hasCtrlOrCmd = e.ctrlKey || e.metaKey;
+      const isKeyA = e.key.toLowerCase() === 'a' || e.code === 'KeyA';
+      if (hasCtrlOrCmd && isKeyA && (e.shiftKey || e.altKey)) {
+        e.preventDefault();
+        handleToggleStealth();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleToggleStealth]);
+
+  // Support phone users typing ?admin or ?stealth in URL
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.location.search) {
+      const search = window.location.search.toLowerCase();
+      if (search.includes('admin') || search.includes('stealth')) {
+        setIsStealthUnlocked(true);
+        setIsAdminLoginOpen(true);
+      }
+    }
   }, []);
 
   // Navigation router
@@ -534,6 +570,8 @@ export default function App() {
         onNavigate={handleNavigate}
         settings={settings}
         currentUser={currentUser}
+        isStealthUnlocked={isStealthUnlocked}
+        onToggleStealth={handleToggleStealth}
         onOpenSearch={() => setIsSearchOpen(true)}
         onOpenAdminLogin={() => setIsAdminLoginOpen(true)}
         onLogoutAdmin={handleLogout}
@@ -713,6 +751,8 @@ export default function App() {
       <Footer
         onNavigate={handleNavigate}
         settings={settings}
+        isStealthUnlocked={isStealthUnlocked}
+        onToggleStealth={handleToggleStealth}
         onOpenAdminLogin={() => {
           if (currentUser) {
             setCurrentView('admin');

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   Sprout, 
   Search, 
@@ -12,7 +12,8 @@ import {
   Award,
   BookmarkCheck,
   Target,
-  Sparkles
+  Sparkles,
+  Lock
 } from 'lucide-react';
 import { SiteSettings, AuthUser } from '../types';
 
@@ -21,6 +22,8 @@ interface HeaderProps {
   onNavigate: (view: string, param?: string) => void;
   settings: SiteSettings;
   currentUser: AuthUser | null;
+  isStealthUnlocked?: boolean;
+  onToggleStealth?: () => void;
   onOpenSearch: () => void;
   onOpenAdminLogin: () => void;
   onLogoutAdmin: () => void;
@@ -31,11 +34,63 @@ export const Header: React.FC<HeaderProps> = ({
   onNavigate,
   settings,
   currentUser,
+  isStealthUnlocked = false,
+  onToggleStealth,
   onOpenSearch,
   onOpenAdminLogin,
   onLogoutAdmin,
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Stealth mode tap tracker for phone users (5 rapid taps or 2-sec hold on logo)
+  const tapCountRef = useRef(0);
+  const lastTapTimeRef = useRef(0);
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleTouchStart = () => {
+    longPressTimerRef.current = setTimeout(() => {
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        try { navigator.vibrate([40, 60, 40]); } catch (_) {}
+      }
+      if (onToggleStealth) {
+        onToggleStealth();
+      } else {
+        onOpenAdminLogin();
+      }
+    }, 1800);
+  };
+
+  const handleTouchEnd = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+    }
+  };
+
+  const handleLogoClick = (e: React.MouseEvent) => {
+    const now = Date.now();
+    if (now - lastTapTimeRef.current < 700) {
+      tapCountRef.current += 1;
+    } else {
+      tapCountRef.current = 1;
+    }
+    lastTapTimeRef.current = now;
+
+    if (tapCountRef.current >= 3) {
+      e.preventDefault();
+      tapCountRef.current = 0;
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        try { navigator.vibrate([40, 60, 40]); } catch (_) {}
+      }
+      if (onToggleStealth) {
+        onToggleStealth();
+      } else {
+        onOpenAdminLogin();
+      }
+      return;
+    }
+
+    handleNav('home');
+  };
 
   const navItems = [
     { id: 'home', label: 'Home' },
@@ -76,20 +131,20 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Brand Logo */}
           <div className="flex items-center gap-8">
             <button 
-              onClick={() => handleNav('home')} 
-              className="group flex items-center gap-2 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[#163323] rounded-md p-1"
+              onClick={handleLogoClick}
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+              className="group flex items-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[#163323] rounded-md py-1"
+              aria-label="DEBLOOM — Start where you are. Bloom from there."
             >
-              <div className="w-9 h-9 rounded-full bg-[#163323] text-[#FCFBF7] flex items-center justify-center shadow-xs group-hover:bg-[#27523d] transition-colors">
-                <Sprout className="w-5 h-5 text-[#8FA89B] group-hover:text-[#FCFBF7] transition-colors" />
-              </div>
-              <div>
-                <span className="font-editorial text-2xl font-bold tracking-tight text-[#163323] block leading-none">
-                  DEBLOOM
-                </span>
-                <span className="text-[10px] uppercase tracking-wider text-[#57615C] font-medium block mt-0.5">
-                  Start where you are
-                </span>
-              </div>
+              <img 
+                src="/images/debloom-logo.png" 
+                alt="DEBLOOM — Start where you are. Bloom from there." 
+                className="h-10 sm:h-12 md:h-13 w-auto object-contain transition-transform group-hover:scale-[1.02]"
+                width={1264}
+                height={848}
+                loading="eager"
+              />
             </button>
 
             {/* Desktop Navigation */}
@@ -155,8 +210,8 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="hidden sm:inline">Telegram</span>
             </a>
 
-            {/* Admin or Writer indicator / Login */}
-            {currentUser ? (
+            {/* Logged in Admin or Writer indicator */}
+            {currentUser && (
               <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => handleNav('admin')}
@@ -173,13 +228,17 @@ export const Header: React.FC<HeaderProps> = ({
                   Exit
                 </button>
               </div>
-            ) : (
+            )}
+
+            {/* When stealth mode is toggled visible by admin and unauthenticated */}
+            {!currentUser && isStealthUnlocked && (
               <button
                 onClick={onOpenAdminLogin}
-                className="text-[11px] text-[#7B8681] hover:text-[#163323] px-2 py-1 transition-colors"
-                title="Admin & Writer Login"
+                className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-[#163323] text-white hover:bg-[#27523d] transition-colors shadow-xs animate-in fade-in"
+                title="Admin Login"
               >
-                CMS
+                <Lock className="w-3.5 h-3.5 text-[#8FA89B]" />
+                <span className="hidden sm:inline">Admin</span>
               </button>
             )}
 
@@ -230,6 +289,18 @@ export const Header: React.FC<HeaderProps> = ({
               <Send className="w-4 h-4 text-[#8FA89B]" />
               Join Debloom on Telegram
             </a>
+            {!currentUser && isStealthUnlocked && (
+              <button
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  onOpenAdminLogin();
+                }}
+                className="w-full text-center px-4 py-2.5 text-sm font-semibold text-white bg-[#27523D] rounded-lg hover:bg-[#163323] flex items-center justify-center gap-2 animate-in fade-in"
+              >
+                <Lock className="w-4 h-4 text-[#8FA89B]" />
+                <span>Admin Login</span>
+              </button>
+            )}
           </div>
         </div>
       )}

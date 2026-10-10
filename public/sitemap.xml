@@ -36,8 +36,25 @@
     <priority>0.6</priority>
   </url>
   <url>
+    <loc>https://debloom.org/contact</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
     <loc>https://debloom.org/submit</loc>
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://debloom.org/blog/what-if-your-biggest-limitation-is-a-thought-you-don-t</loc>
+    <lastmod>2026-10-08</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://debloom.org/opportunities/female-scholars-foundation-2026-university-scholarship-programme</loc>
+    <lastmod>2026-03-01</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
   </url>
 </urlset>

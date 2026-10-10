@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   ShieldCheck, 
   PlusCircle, 
@@ -38,7 +38,8 @@ import {
   Loader2,
   Camera,
   BookOpen,
-  Database
+  Database,
+  Mail
 } from 'lucide-react';
 import { 
   Article, 
@@ -52,7 +53,8 @@ import {
   ContentReport, 
   AuthUser,
   ArticleStatus,
-  OpportunityStatus
+  OpportunityStatus,
+  NewsletterSubscriber
 } from '../../types';
 import { 
   articleService, 
@@ -64,7 +66,8 @@ import {
   reportService, 
   writerService, 
   settingsService, 
-  analyticsService 
+  analyticsService,
+  subscriberService
 } from '../../services/storage';
 import { RichTextEditor } from '../../components/RichTextEditor';
 import { ArticleContentRenderer } from '../../components/ArticleContentRenderer';
@@ -95,6 +98,7 @@ type AdminTab =
   | 'submissions' 
   | 'reports' 
   | 'writers' 
+  | 'subscribers'
   | 'analytics' 
   | 'settings';
 
@@ -167,6 +171,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onToast,
 }) => {
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
+  const [subscribers, setSubscribers] = useState<NewsletterSubscriber[]>([]);
+  const [isSubscribersLoading, setIsSubscribersLoading] = useState(false);
+
+  useEffect(() => {
+    subscriberService.getAll().then((data) => {
+      setSubscribers(data);
+    }).catch(() => {});
+  }, [activeTab]);
 
   // Modal editor states
   const [editingArticle, setEditingArticle] = useState<Article | null>(null);
@@ -798,6 +810,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             { id: 'submissions', label: `Submissions (${pendingSubmissionsCount} pending)`, icon: Inbox },
             { id: 'reports', label: `Reports (${pendingReportsCount} open)`, icon: AlertTriangle },
             { id: 'writers', label: 'Writers', icon: Users },
+            { id: 'subscribers', label: `Subscribers (${subscribers.length})`, icon: Mail },
             { id: 'analytics', label: 'Analytics', icon: BarChart3 },
             { id: 'settings', label: 'Settings', icon: SettingsIcon },
           ].map(({ id, label, icon: Icon }) => (
@@ -860,7 +873,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
 
             {/* Dashboard Real Count Cards (Section 18) */}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
               <div className="bg-white p-4 rounded-xl border border-[#E5E2D9]">
                 <div className="text-[11px] font-semibold uppercase tracking-wider text-[#7B8681]">Drafts</div>
                 <div className="text-2xl font-bold text-[#163323] mt-1">{draftsCount}</div>
@@ -895,6 +908,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <div className="text-[11px] font-semibold uppercase tracking-wider text-[#7B8681]">Challenge Entries</div>
                 <div className="text-2xl font-bold text-[#163323] mt-1">{challengeEntriesCount}</div>
                 <div className="text-[10px] text-[#57615C] mt-1">Student submissions</div>
+              </div>
+
+              <div 
+                onClick={() => setActiveTab('subscribers')}
+                className="bg-white p-4 rounded-xl border border-[#E5E2D9] cursor-pointer hover:border-[#8FA89B] transition-colors"
+                title="View Newsletter Subscribers"
+              >
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-[#7B8681]">Subscribers</div>
+                <div className="text-2xl font-bold text-[#163323] mt-1">{subscribers.length}</div>
+                <div className="text-[10px] text-[#27523D] mt-1">Firestore Cloud</div>
               </div>
             </div>
 
@@ -1751,6 +1774,117 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 ))}
               </div>
             </div>
+          </div>
+        )}
+
+        {/* ================= TAB: SUBSCRIBERS (FIRESTORE) ================= */}
+        {activeTab === 'subscribers' && (
+          <div className="bg-white p-6 rounded-xl border border-[#E5E2D9] space-y-6 animate-in fade-in duration-150">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#E5E2D9]">
+              <div>
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#E2ECE5] text-[#163323] text-[11px] font-semibold mb-1">
+                  <Database className="w-3 h-3 text-[#27523D]" />
+                  <span>Google Cloud Firestore · subscribers collection</span>
+                </div>
+                <h2 className="font-editorial text-2xl font-bold text-[#163323]">
+                  Newsletter Subscribers ({subscribers.length})
+                </h2>
+                <p className="text-xs text-[#57615C]">
+                  Audience captured via the footer newsletter signup form and stored permanently in Firestore.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={async () => {
+                    setIsSubscribersLoading(true);
+                    try {
+                      const fresh = await subscriberService.getAll();
+                      setSubscribers(fresh);
+                      onToast('Subscribers refreshed from Firestore! 🌱');
+                    } finally {
+                      setIsSubscribersLoading(false);
+                    }
+                  }}
+                  className="px-3 py-1.5 bg-[#F5F3E6] text-[#163323] hover:bg-[#EFECE1] border border-[#E5E2D9] text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <RotateCcw className={`w-3.5 h-3.5 ${isSubscribersLoading ? 'animate-spin' : ''}`} />
+                  <span>Refresh</span>
+                </button>
+                <button
+                  onClick={() => {
+                    if (subscribers.length === 0) {
+                      onToast('No subscribers to export yet.');
+                      return;
+                    }
+                    const csvContent = 'data:text/csv;charset=utf-8,' + ['Email,Subscribed At,Source,Status'].concat(
+                      subscribers.map(s => `"${s.email}","${s.subscribedAt}","${s.source || 'footer'}","${s.status || 'active'}"`)
+                    ).join('\n');
+                    const encodedUri = encodeURI(csvContent);
+                    const link = document.createElement('a');
+                    link.setAttribute('href', encodedUri);
+                    link.setAttribute('download', `debloom-subscribers-${new Date().toISOString().split('T')[0]}.csv`);
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    onToast('Exported subscriber CSV! 📄');
+                  }}
+                  className="px-3 py-1.5 bg-[#163323] text-white hover:bg-[#27523D] text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Export CSV</span>
+                </button>
+              </div>
+            </div>
+
+            {subscribers.length === 0 ? (
+              <div className="py-12 text-center text-[#57615C]">
+                <Mail className="w-10 h-10 mx-auto text-[#8FA89B] mb-2 opacity-60" />
+                <p className="text-sm font-semibold text-[#163323]">No subscribers yet</p>
+                <p className="text-xs text-[#7B8681] mt-1 max-w-sm mx-auto">
+                  When visitors submit their email in the footer newsletter signup, they will appear here and in your Firestore 'subscribers' collection.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-[#FAF9F5] border-b border-[#E5E2D9] text-[#57615C] uppercase text-[10px] tracking-wider">
+                    <tr>
+                      <th className="py-2.5 px-3">Subscriber Email</th>
+                      <th className="py-2.5 px-3">Subscribed Date</th>
+                      <th className="py-2.5 px-3">Source</th>
+                      <th className="py-2.5 px-3">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#E5E2D9]">
+                    {subscribers.map((sub, idx) => (
+                      <tr key={sub.id || idx} className="hover:bg-[#FAF9F5]">
+                        <td className="py-2.5 px-3 font-medium text-[#163323]">
+                          <div className="flex items-center gap-2">
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#27523D]" />
+                            <span>{sub.email}</span>
+                          </div>
+                        </td>
+                        <td className="py-2.5 px-3 text-[#57615C]">
+                          {sub.subscribedAt ? new Date(sub.subscribedAt).toLocaleString() : 'Recent'}
+                        </td>
+                        <td className="py-2.5 px-3 text-[#7B8681]">
+                          <span className="px-2 py-0.5 rounded bg-[#EFECE1] text-[#163323] text-[10px]">
+                            {sub.source || 'footer_newsletter'}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <span className="inline-flex items-center gap-1 text-[11px] text-[#27523D] font-medium">
+                            <CheckCircle2 className="w-3 h-3 text-[#27523D]" />
+                            <span>Active</span>
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 

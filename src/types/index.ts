@@ -176,3 +176,12 @@ export interface AuthUser {
   role: 'admin' | 'writer';
   token?: string;
 }
+
+export interface NewsletterSubscriber {
+  id: string;
+  email: string;
+  subscribedAt: string;
+  source?: string;
+  status?: 'active' | 'unsubscribed';
+  updatedAt?: string;
+}

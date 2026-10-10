@@ -1,29 +1,90 @@
-import React from 'react';
-import { Sprout, Send, ShieldCheck, Heart, ArrowUpRight } from 'lucide-react';
+import React, { useRef } from 'react';
+import { Send, ArrowUpRight, Lock } from 'lucide-react';
 import { SiteSettings } from '../types';
+import { NewsletterSignup } from './NewsletterSignup';
 
 interface FooterProps {
   onNavigate: (view: string) => void;
   settings: SiteSettings;
+  isStealthUnlocked?: boolean;
+  onToggleStealth?: () => void;
   onOpenAdminLogin: () => void;
 }
 
-export const Footer: React.FC<FooterProps> = ({ onNavigate, settings, onOpenAdminLogin }) => {
+export const Footer: React.FC<FooterProps> = ({ 
+  onNavigate, 
+  settings, 
+  isStealthUnlocked = false,
+  onToggleStealth,
+  onOpenAdminLogin 
+}) => {
+  // Mobile phone stealth gesture: 3 taps or 1.8-sec hold on copyright text
+  const tapCountRef = useRef(0);
+  const lastTapTimeRef = useRef(0);
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const triggerStealthAction = () => {
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      try { navigator.vibrate([40, 60, 40]); } catch (_) {}
+    }
+    if (onToggleStealth) {
+      onToggleStealth();
+    } else {
+      onOpenAdminLogin();
+    }
+  };
+
+  const handleTouchStart = () => {
+    longPressTimerRef.current = setTimeout(() => {
+      triggerStealthAction();
+    }, 1800);
+  };
+
+  const handleTouchEnd = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+    }
+  };
+
+  const handleCopyrightClick = () => {
+    const now = Date.now();
+    if (now - lastTapTimeRef.current < 700) {
+      tapCountRef.current += 1;
+    } else {
+      tapCountRef.current = 1;
+    }
+    lastTapTimeRef.current = now;
+
+    if (tapCountRef.current >= 3) {
+      tapCountRef.current = 0;
+      triggerStealthAction();
+    }
+  };
+
   return (
     <footer className="bg-[#12281B] text-[#FCFBF7] border-t border-[#27523D] pt-14 pb-12 transition-colors">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        
+        {/* Newsletter Signup Form (stores subscribers in Firestore 'subscribers' collection) */}
+        <NewsletterSignup className="mb-12" />
+
         <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-5 gap-10 pb-12 border-b border-[#27523D]/60">
           
           {/* Brand Column */}
           <div className="md:col-span-2 space-y-4">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-full bg-[#8FA89B] text-[#12281B] flex items-center justify-center font-bold">
-                <Sprout className="w-4 h-4 text-[#12281B]" />
-              </div>
-              <span className="font-editorial text-2xl font-bold tracking-tight text-white">
-                DEBLOOM 🌱
-              </span>
-            </div>
+            <button
+              onClick={() => onNavigate('home')}
+              className="inline-block p-2 bg-[#F5F3E6] rounded-xl hover:opacity-95 transition-opacity text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8FA89B] shadow-sm"
+              aria-label="DEBLOOM — Start where you are. Bloom from there."
+            >
+              <img
+                src="/images/debloom-logo.png"
+                alt="DEBLOOM — Start where you are. Bloom from there."
+                className="h-12 sm:h-14 w-auto object-contain rounded-lg"
+                width={1264}
+                height={848}
+              />
+            </button>
 
             <p className="font-editorial italic text-base text-[#DCE7E1]/90 max-w-sm">
               "Start where you are. Bloom from there."
@@ -137,8 +198,26 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, settings, onOpenAdmi
 
         {/* Bottom Bar */}
         <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-[#8FA89B]">
-          <div>
-            © {new Date().getFullYear()} Debloom. All rights reserved.
+          <div 
+            onClick={handleCopyrightClick}
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+            className="flex items-center gap-2 select-none cursor-default"
+          >
+            <span>© {new Date().getFullYear()} Debloom. All rights reserved.</span>
+            {isStealthUnlocked && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenAdminLogin();
+                }}
+                className="ml-2 inline-flex items-center gap-1 text-[11px] text-[#C49B4B] hover:text-white transition-colors animate-in fade-in cursor-pointer"
+                title="Admin Login"
+              >
+                <Lock className="w-3 h-3" />
+                <span>Staff Portal</span>
+              </button>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-4">
@@ -152,14 +231,6 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, settings, onOpenAdmi
             <span>·</span>
             <button onClick={() => onNavigate('about')} className="hover:text-white transition-colors">
               Referral Disclosure
-            </button>
-            <span>·</span>
-            <button 
-              onClick={onOpenAdminLogin} 
-              className="text-[#B9CAC0] hover:text-[#C49B4B] transition-colors flex items-center gap-1"
-            >
-              <ShieldCheck className="w-3 h-3" />
-              <span>Admin & Writer CMS</span>
             </button>
           </div>
         </div>

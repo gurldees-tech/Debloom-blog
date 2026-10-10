@@ -7,7 +7,7 @@ import crypto from 'crypto';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { initializeApp } from 'firebase/app';
-import { initializeFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
+import { initializeFirestore, doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
 import sharp from 'sharp';
 
 dotenv.config();
@@ -141,6 +141,7 @@ interface DatabaseSchema {
   submissions: any[];
   reports: any[];
   writers: any[];
+  subscribers?: any[];
   settings: {
     telegramUrl: string;
     telegramChannelName: string;
@@ -162,6 +163,7 @@ const DEFAULT_DB: DatabaseSchema = {
   submissions: [],
   reports: [],
   writers: [],
+  subscribers: [],
   settings: {
     telegramUrl: 'https://t.me/DebloomHQ',
     telegramChannelName: '@DebloomHQ',
@@ -544,6 +546,102 @@ app.post('/api/reports', (req: Request, res: Response) => {
   writeDb(db);
 
   res.json({ success: true, id: newReport.id });
+});
+
+// ----------------- NEWSLETTER SUBSCRIBERS (FIRESTORE 'subscribers' collection) -----------------
+app.post(['/api/subscribers', '/api/newsletter/subscribe'], async (req: Request, res: Response) => {
+  const { email, source } = req.body;
+
+  if (!email || typeof email !== 'string') {
+    res.status(400).json({ error: 'Email address is required.' });
+    return;
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(cleanEmail)) {
+    res.status(400).json({ error: 'Please enter a valid email address.' });
+    return;
+  }
+
+  const subscriberDocId = cleanEmail.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const nowIso = new Date().toISOString();
+  let storedInFirestore = false;
+  let isExisting = false;
+
+  // Persist directly to Firestore 'subscribers' collection
+  if (firestoreDb) {
+    try {
+      const subRef = doc(firestoreDb, 'subscribers', subscriberDocId);
+      const existingSnap = await getDoc(subRef);
+      if (existingSnap.exists()) {
+        isExisting = true;
+      }
+      await setDoc(subRef, {
+        email: cleanEmail,
+        subscribedAt: isExisting ? (existingSnap.data()?.subscribedAt || nowIso) : nowIso,
+        updatedAt: nowIso,
+        source: source || 'footer_newsletter',
+        status: 'active',
+      }, { merge: true });
+      storedInFirestore = true;
+      console.log(`✅ Stored subscriber "${cleanEmail}" in Firestore 'subscribers' collection`);
+    } catch (err) {
+      console.error('⚠️ Firestore write to subscribers collection error:', err);
+    }
+  }
+
+  // Also maintain in local persistent JSON db for immediate fallback & admin inspection
+  const db = readDb();
+  if (!db.subscribers) {
+    db.subscribers = [];
+  }
+  const existingIdx = db.subscribers.findIndex((s: any) => s.email === cleanEmail);
+  if (existingIdx >= 0) {
+    isExisting = true;
+    db.subscribers[existingIdx].updatedAt = nowIso;
+    db.subscribers[existingIdx].status = 'active';
+  } else {
+    db.subscribers.unshift({
+      id: `sub_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      email: cleanEmail,
+      subscribedAt: nowIso,
+      source: source || 'footer_newsletter',
+      status: 'active',
+    });
+  }
+  writeDb(db);
+
+  res.json({
+    success: true,
+    message: isExisting
+      ? "You're already subscribed! You'll receive our next edition. 🌱"
+      : "Welcome to DEBLOOM! You're on the list to receive verified opportunities & guides. 🌱",
+    email: cleanEmail,
+    storedInFirestore,
+  });
+});
+
+app.get('/api/admin/subscribers', async (req: Request, res: Response) => {
+  // If firestore is available, attempt to retrieve live subscribers from Firestore collection
+  if (firestoreDb) {
+    try {
+      const snap = await getDocs(collection(firestoreDb, 'subscribers'));
+      if (!snap.empty) {
+        const firestoreSubscribers = snap.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        res.json({ subscribers: firestoreSubscribers, source: 'firestore' });
+        return;
+      }
+    } catch (err) {
+      console.warn('Could not read subscribers directly from Firestore:', err);
+    }
+  }
+
+  const db = readDb();
+  res.json({ subscribers: db.subscribers || [], source: 'local' });
 });
 
 app.post('/api/analytics', (req: Request, res: Response) => {

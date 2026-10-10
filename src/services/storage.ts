@@ -9,7 +9,8 @@ import {
   UserSubmission,
   ContentReport,
   AnalyticsEvent,
-  AuthUser
+  AuthUser,
+  NewsletterSubscriber
 } from '../types';
 import {
   INITIAL_ARTICLES,
@@ -35,7 +36,8 @@ const STORAGE_KEYS = {
   SUBMISSIONS: 'debloom_v2_submissions',
   REPORTS: 'debloom_v2_reports',
   ANALYTICS: 'debloom_v2_analytics',
-  AUTH: 'debloom_v2_auth_user'
+  AUTH: 'debloom_v2_auth_user',
+  SUBSCRIBERS: 'debloom_v2_subscribers'
 };
 
 // Legacy keys to remove
@@ -764,5 +766,55 @@ export const authService = {
       }).catch(() => {});
     }
     localStorage.removeItem(STORAGE_KEYS.AUTH);
+  }
+};
+
+export const subscriberService = {
+  subscribe: async (email: string, source: string = 'footer_newsletter'): Promise<{ success: boolean; message: string }> => {
+    try {
+      const res = await fetch('/api/subscribers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, source }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to subscribe');
+      }
+      return { 
+        success: true, 
+        message: data.message || "Thank you for subscribing to Debloom! 🌱" 
+      };
+    } catch (err: any) {
+      console.warn('Network subscription fallback:', err);
+      const subs = safeGet<NewsletterSubscriber[]>(STORAGE_KEYS.SUBSCRIBERS, []);
+      const clean = email.trim().toLowerCase();
+      if (!subs.some(s => s.email === clean)) {
+        subs.unshift({
+          id: `sub_${Date.now()}`,
+          email: clean,
+          subscribedAt: new Date().toISOString(),
+          source,
+          status: 'active'
+        });
+        safeSet(STORAGE_KEYS.SUBSCRIBERS, subs);
+      }
+      return { 
+        success: true, 
+        message: "Welcome to Debloom! You're on the list to receive updates. 🌱" 
+      };
+    }
+  },
+  getAll: async (): Promise<NewsletterSubscriber[]> => {
+    try {
+      const res = await fetch('/api/admin/subscribers');
+      if (res.ok) {
+        const data = await res.json();
+        return data.subscribers || [];
+      }
+    } catch (e) {
+      console.warn('Error fetching subscribers:', e);
+    }
+    return safeGet<NewsletterSubscriber[]>(STORAGE_KEYS.SUBSCRIBERS, []);
   }
 };

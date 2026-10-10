@@ -53,7 +53,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
           {/* Subtle quiet kicker without pill badge */}
           <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[#27523D] mb-4">
             <span className="w-1.5 h-1.5 rounded-full bg-[#27523D]" />
-            <span>Debloom Student Resource Platform</span>
+            <span className="tracking-widest">DEBLOOM</span>
             <span aria-hidden="true" className="text-[#8FA89B]">·</span>
             <span className="text-[#57615C] normal-case font-normal">Nigerian roots, global usefulness</span>
           </div>
@@ -63,7 +63,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
           </h1>
 
           <p className="mt-5 text-base sm:text-lg text-[#57615C] max-w-2xl mx-auto leading-relaxed">
-            Discover skills, opportunities, resources and practical ideas to help you prepare for what's next—without fake claims or overwhelming jargon.
+            DEBLOOM helps young people discover learning resources, skills, opportunities and practical ways to grow—grounded in authenticity, clarity, and life beyond the classroom.
           </p>
 
           <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
